@@ -1,5 +1,4 @@
 train/__pycache__/
-trian/.idea/
 data/img_celeba/
 data/data_list.txt
 data/identity_CelebA.txt
