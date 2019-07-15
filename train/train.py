@@ -56,10 +56,6 @@ place = fluid.CUDAPlace(0) if cfg.TRAIN.USE_GPU else fluid.CPUPlace()
 exe = fluid.Executor(place)
 exe.run(fluid.default_startup_program())
 
-# 加载检查点模型
-if os.path.exists(cfg.TRAIN.PERSISTABLES_MODEL_PATH):
-    fluid.io.load_persistables(exe, cfg.TRAIN.PERSISTABLES_MODEL_PATH)
-
 # 获取预测和训练数据
 train_reader = paddle.batch(reader=reader.train_reader(cfg.TRAIN.TRAIN_LIST), batch_size=cfg.TRAIN.BATCH_SIZE)
 test_reader = paddle.batch(reader=reader.train_reader(cfg.TRAIN.TEST_LIST), batch_size=cfg.TRAIN.BATCH_SIZE)
@@ -124,12 +120,5 @@ for pass_id in range(cfg.TRAIN.PASS_SUM):
                                       executor=exe,
                                       model_filename='model.paddle',
                                       params_filename='params.paddle')
-
-        # 保存检查点模型
-        shutil.rmtree(cfg.TRAIN.SAVE_PERSISTABLE_MODEL_PATH, ignore_errors=True)
-        os.makedirs(cfg.TRAIN.SAVE_PERSISTABLE_MODEL_PATH)
-        fluid.io.save_persistables(dirname=cfg.TRAIN.SAVE_PERSISTABLE_MODEL_PATH,
-                                   executor=exe)
-
         # 把最大测试准确率赋值给上一个最后的准确率
         last_test_acc = test_acc

@@ -12,8 +12,6 @@ class TRAIN:
     PASS_SUM = 70
     # 数据的类别
     CLASS_DIM = 10177
-    # 检查点模型路径
-    PERSISTABLES_MODEL_PATH = '../model/persistable_model'
     # 训练的图像列表文件
     TRAIN_LIST = '../data/train_list.txt'
     # 测试的图像列表文件
@@ -23,9 +21,7 @@ class TRAIN:
     # 保存VisualDL日志的保存路径
     LOG_DIR = '../log'
     # 保存预测模型的路径
-    SAVE_INFER_MODEL_PATH = 'model/infer_model'
-    # 保存检查点模型的路径
-    SAVE_PERSISTABLE_MODEL_PATH = 'model/persistable_model'
+    SAVE_INFER_MODEL_PATH = '../infer_model'
 
 
 def show_train_args():
