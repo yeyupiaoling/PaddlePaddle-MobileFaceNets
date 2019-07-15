@@ -1,0 +1,2 @@
+# PaddlePaddle-MobileFaceNets
+MobileFaceNets人脸识别模型
