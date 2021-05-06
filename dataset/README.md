@@ -2,5 +2,4 @@
 
 1. 把`img_celeba.7z`解压到当前目录下
 2. 把`identity_CelebA.txt`文件复制到当前目录下
-3. 把`list_bbox_celeba.txt`文件复制到当前目录下
 4. 把`list_landmarks_celeba.txt`文件复制到当前目录下

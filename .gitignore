@@ -1,3 +1,6 @@
+.idea/
+log/
+dataset/
 train/__pycache__/
 train/.idea/
 data/img_celeba/
