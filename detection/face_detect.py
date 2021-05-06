@@ -191,7 +191,7 @@ class MTCNN:
         landmark = landmark[keep]
         return boxes_c, landmark
 
-    def infer_image_paht(self, image_path):
+    def infer_image_path(self, image_path):
         im = cv2.imread(image_path)
         # 调用第一个模型预测
         boxes_c = self.detect_pnet(im, 20, 0.79, 0.9)
@@ -223,66 +223,3 @@ class MTCNN:
             return None, None
 
         return boxes_c, landmark
-
-    def align(self, image):
-        if isinstance(image, str):
-            image = cv2.imread(image)
-        landmarks = self.__get_max_face_landmarks(image)
-
-        if landmarks is None:
-            return None, None
-
-        else:
-            return self.__rotate(image, landmarks)
-
-    def __get_max_face_landmarks(self, image):
-        if isinstance(image, str):
-            boxes_c, landmark = self.infer_image_paht(image)
-        else:
-            boxes_c, landmark = self.infer_image(image)
-
-        if landmark is None:
-            return None
-        elif len(landmark) == 1:
-            return landmark[0]
-        else:
-            # 查找图片中最大的人脸
-            areas = []
-            for box in boxes_c:
-                w = box[2] - box[0]
-                h = box[3] - box[1]
-                areas.append(w * h)
-            max_face_index = np.argmax(areas)
-            return landmark[max_face_index]
-
-    @staticmethod
-    def __rotate(image, landmarks):
-        landmark = []
-        for j in range(len(landmarks) // 2):
-            landmark.append([landmarks[2 * j], landmarks[2 * j + 1]])
-        landmark = np.array(landmark)
-        # rotation angle
-        left_eye = landmark[0]
-        right_eye = landmark[1]
-        radian = np.arctan((left_eye[1] - right_eye[1]) / (left_eye[0] - right_eye[0]))
-
-        # image size after rotating
-        height, width, _ = image.shape
-        cos = math.cos(radian)
-        sin = math.sin(radian)
-        new_w = int(width * abs(cos) + height * abs(sin))
-        new_h = int(width * abs(sin) + height * abs(cos))
-
-        # translation
-        Tx = new_w // 2 - width // 2
-        Ty = new_h // 2 - height // 2
-
-        # affine matrix
-        M = np.array([[cos, sin, (1 - cos) * width / 2. - sin * height / 2. + Tx],
-                      [-sin, cos, sin * width / 2. + (1 - cos) * height / 2. + Ty]])
-
-        image_rotate = cv2.warpAffine(image, M, (new_w, new_h), borderValue=(255, 255, 255))
-
-        landmark = np.concatenate([landmark, np.ones((landmark.shape[0], 1))], axis=1)
-        landmarks_rotate = np.dot(M, landmark.T).T
-        return image_rotate, landmarks_rotate

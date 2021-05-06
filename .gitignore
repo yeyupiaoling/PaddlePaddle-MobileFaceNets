@@ -1,12 +1,6 @@
 .idea/
 log/
 dataset/
-train/__pycache__/
-train/.idea/
-data/img_celeba/
-data/data_list.txt
-data/identity_CelebA.txt
-data/list_bbox_celeba.txt
-data/list_landmarks_celeba.txt
-data/test_list.txt
-data/train_list.txt
+temp/
+models/mobilefacenet/params
+models/mobilefacenet/infer

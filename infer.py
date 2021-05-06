@@ -1,55 +1,98 @@
+import argparse
+import functools
+import os
+import time
+
+import sklearn
 import cv2
 import numpy as np
-import paddle.fluid as fluid
+import paddle
+from detection.face_detect import MTCNN
+from utils.reader import process
+from utils.utility import add_arguments, print_arguments
 
-import config as cfg
-import reader
-
-# 获取执行器
-place = fluid.CUDAPlace(0)
-# place = fluid.CPUPlace()
-exe = fluid.Executor(place)
-
-# 从保存的模型文件中获取预测程序、输入数据的名称和分类器
-[infer_program, feeded_var_names, target_vars] = fluid.io.load_inference_model(dirname=cfg.TRAIN.SAVE_INFER_MODEL_PATH,
-                                                                               executor=exe,
-                                                                               model_filename='model.paddle',
-                                                                               params_filename='params.paddle')
-
-
-# 对图片进行预处理
-def load_image(img_path, landmarks):
-    img_im = cv2.imread(img_path)
-    img = reader.warp_im(img_im, landmarks, reader.coord5point)
-    img = img[59:170, 29:140, :]
-    img = cv2.resize(img, (cfg.TRAIN.IMAGE_WIDTH, cfg.TRAIN.IMAGE_HEIGHT))
-    img = np.array(img).astype(np.float32)
-    # 转换成CHW
-    img = img.transpose((2, 0, 1))
-    # 转换成BGR
-    img = img[(2, 1, 0), :, :] / 255.0
-    return img
+parser = argparse.ArgumentParser(description=__doc__)
+add_arg = functools.partial(add_arguments, argparser=parser)
+add_arg('image_path',               str,     'temp/test2.jpg',                    '预测图片路径')
+add_arg('face_db_path',             str,     'face_db',                          '人脸库路径')
+add_arg('threshold',                float,   0.7,                                '判断相识度的阈值')
+add_arg('mobilefacenet_model_path', str,     'models/mobilefacenet/infer/model', 'MobileFaceNet预测模型的路径')
+add_arg('mtcnn_model_path',         str,     'models/mtcnn',                     'MTCNN预测模型的路径')
+args = parser.parse_args()
+print_arguments(args)
 
 
-def infer(image_data):
-    probs = []
-    for data in image_data:
-        img_path, landmarks = data
-        # 添加待预测的图片
-        infer_data = load_image(img_path, landmarks)[np.newaxis,]
+class Predictor:
+    def __init__(self, mtcnn_model_path, mobilefacenet_model_path, face_db_path, threshold=0.7):
+        self.threshold = threshold
+        self.mtcnn = MTCNN(model_path=mtcnn_model_path)
 
+        # 加载模型
+        self.model = paddle.jit.load(mobilefacenet_model_path)
+        self.model.eval()
+
+        self.faces_db = self.load_face_db(face_db_path)
+
+    def load_face_db(self, face_db_path):
+        faces_db = {}
+        for path in os.listdir(face_db_path):
+            name = os.path.basename(path).split('.')[0]
+            image_path = os.path.join(face_db_path, path)
+            img = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), -1)
+            _, imgs = self.detection(img)
+            feature = self.infer(imgs[0])
+            if len(imgs) > 1:
+                print('人脸库中的 %s 图片包含了2张人脸以上，自动跳过该图片' % image_path)
+                continue
+            # feature = sklearn.preprocessing.normalize(feature)
+            faces_db[name] = feature[0]
+        return faces_db
+
+    def detection(self, img):
+        imgs = []
+        boxes, landmarks = self.mtcnn.infer_image(img)
+        for landmark in landmarks:
+            landmark = [[float(landmark[i]), float(landmark[i + 1])] for i in range(0, len(landmark), 2)]
+            landmark = np.array(landmark, dtype='float32')
+            img1 = process(img, landmark)
+            imgs.append(img1)
+        return boxes, imgs
+
+    # 预测图片
+    def infer(self, img):
+        assert len(img.shape) == 3 or len(img.shape) == 4
+        if len(img.shape) == 3:
+            img = img[np.newaxis, :]
+        img = paddle.to_tensor(img, dtype='float32')
         # 执行预测
-        results = exe.run(program=infer_program,
-                          feed={feeded_var_names[0]: infer_data},
-                          fetch_list=target_vars)
-        probs.append(results[0])
+        feature = self.model(img)
+        return feature.numpy()
 
-    # 对角余弦值
-    dist = np.dot(probs[0], probs[1]) / (np.linalg.norm(probs[0]) * np.linalg.norm(probs[1]))
-    print("两个人脸的相似度为：%f" % dist)
+    def recognition(self, image_path):
+        img = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), -1)
+        boxes, imgs = self.detection(img)
+        imgs = np.array(imgs, dtype='float32')
+        features = self.infer(imgs)
+        names = []
+        for i in range(len(features)):
+            feature = features[i]
+            results_dict = {}
+            for name in self.faces_db.keys():
+                feature1 = self.faces_db[name]
+                prob = np.dot(feature, feature1) / (np.linalg.norm(feature) * np.linalg.norm(feature1))
+                results_dict[name] = prob
+            results = sorted(results_dict.items(), key=lambda d: d[1], reverse=True)
+            result = results[0]
+            if float(result[1]) > self.threshold:
+                name = results_dict[0]
+                names.append(name)
+            else:
+                names.append('unknow')
+        return boxes, names
 
 
 if __name__ == '__main__':
-    images = [['093567.jpg', [87, 140, 140, 126, 119, 172, 106, 202, 152, 191]],
-              ['089100.jpg', [75, 105, 123, 105, 97, 141, 76, 164, 118, 165]]]
-    infer(images)
+    predictor = Predictor(args.mtcnn_model_path, args.mobilefacenet_model_path, args.face_db_path)
+    boxes, names = predictor.recognition(args.image_path)
+    print(boxes)
+    print(names)

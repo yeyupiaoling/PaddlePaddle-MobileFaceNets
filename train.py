@@ -18,8 +18,8 @@ from utils.utility import add_arguments, print_arguments
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('gpu',              str,    '0,1',                    '训练使用的GPU序号')
-add_arg('batch_size',       int,    8,                        '训练的批量大小')
-add_arg('num_workers',      int,    32,                       '读取数据的线程数量')
+add_arg('batch_size',       int,    64,                       '训练的批量大小')
+add_arg('num_workers',      int,    16,                       '读取数据的线程数量')
 add_arg('num_epoch',        int,    120,                      '训练的轮数')
 add_arg('num_classes',      int,    10177,                    '分类的类别数量')
 add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
@@ -67,10 +67,10 @@ def train(args):
         # 日志记录器
         writer = LogWriter(logdir='log')
     # 获取数据
-    train_dataset = CustomDataset(args.train_list_path)
+    train_dataset = CustomDataset(args.train_list_path, is_train=True)
     train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
 
-    test_dataset = CustomDataset(args.test_list_path)
+    test_dataset = CustomDataset(args.test_list_path, is_train=False)
     test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
 
     # 获取模型
@@ -118,9 +118,7 @@ def train(args):
     for epoch in range(args.num_epoch):
         loss_sum = []
         for batch_id, (img, label) in enumerate(train_loader()):
-            print(img.shape)
             out = model(img)
-            print(out.shape)
             # 计算损失值
             los = loss(out, label)
             loss_sum.append(los)
