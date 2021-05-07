@@ -65,7 +65,7 @@ class Predictor:
             img = img[np.newaxis, :]
         img = paddle.to_tensor(img, dtype='float32')
         # 执行预测
-        feature = self.model(img)
+        _, feature = self.model(img)
         return feature.numpy()
 
     def recognition(self, image_path):
@@ -85,6 +85,7 @@ class Predictor:
                 prob = np.dot(feature, feature1) / (np.linalg.norm(feature) * np.linalg.norm(feature1))
                 results_dict[name] = prob
             results = sorted(results_dict.items(), key=lambda d: d[1], reverse=True)
+            print(results)
             result = results[0]
             prob = float(result[1])
             probs.append(prob)
@@ -116,6 +117,6 @@ class Predictor:
 if __name__ == '__main__':
     predictor = Predictor(args.mtcnn_model_path, args.mobilefacenet_model_path, args.face_db_path)
     boxes, names = predictor.recognition(args.image_path)
-    predictor.draw_face(args.image_path, boxes, names)
     print(boxes)
     print(names)
+    predictor.draw_face(args.image_path, boxes, names)

@@ -1,4 +1,5 @@
 import random
+import time
 
 from skimage import transform as trans
 import cv2
@@ -24,6 +25,20 @@ def random_color(img, lower=0.7, upper=1.3):
     return ImageEnhance.Color(img).enhance(e)
 
 
+# 水平翻转
+def flip(img, landmark):
+    h, w, c = img.shape
+    img = cv2.flip(img, 1)
+    landmark_ = []
+    for l in landmark:
+        landmark_.append([w - l[0], l[1]])
+    landmark_ = np.array(landmark_, dtype=np.float32)
+    landmark_[[0, 1]] = landmark_[[1, 0]]
+    landmark_[[3, 4]] = landmark_[[4, 3]]
+    return img, landmark_
+
+
+# 对齐
 def estimate_norm(lmk):
     assert lmk.shape == (5, 2)
     tform = trans.SimilarityTransform()
@@ -46,6 +61,8 @@ def norm_crop(img, landmark, image_size=112):
 def process(img, landmark, image_size=112, is_train=False):
     if isinstance(img, str):
         img = cv2.imread(img)
+    if not is_train and random.random() > 0.5:
+        img, landmark = flip(img, landmark)
     img = norm_crop(img, landmark, image_size)
     if is_train:
         # 转成PIL进行预处理
