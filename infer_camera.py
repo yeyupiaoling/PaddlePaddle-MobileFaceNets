@@ -12,7 +12,7 @@ from utils.utility import add_arguments, print_arguments
 
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
-add_arg('image_path',               str,     'temp/test.jpg',                    '预测图片路径')
+add_arg('camera_id',                int,     0,                                  '使用的相机ID')
 add_arg('face_db_path',             str,     'face_db',                          '人脸库路径')
 add_arg('threshold',                float,   0.7,                                '判断相识度的阈值')
 add_arg('mobilefacenet_model_path', str,     'models/mobilefacenet/infer/model', 'MobileFaceNet预测模型的路径')
@@ -39,10 +39,10 @@ class Predictor:
             image_path = os.path.join(face_db_path, path)
             img = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), -1)
             _, imgs = self.detection(img)
+            feature = self.infer(imgs[0])
             if imgs is None or len(imgs) > 1:
                 print('人脸库中的 %s 图片包含不是1张人脸，自动跳过该图片' % image_path)
                 continue
-            feature = self.infer(imgs[0])
             faces_db[name] = feature[0]
         return faces_db
 
@@ -68,8 +68,7 @@ class Predictor:
         feature = self.model(img)
         return feature.numpy()
 
-    def recognition(self, image_path):
-        img = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), -1)
+    def recognition(self, img):
         boxes, imgs = self.detection(img)
         if imgs is None:
             return None, None
@@ -97,8 +96,7 @@ class Predictor:
 
     # 画出人脸框和关键点
     @staticmethod
-    def draw_face(image_path, boxes_c, names):
-        img = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), -1)
+    def draw_face(img, boxes_c, names):
         if boxes_c is not None:
             for i in range(boxes_c.shape[0]):
                 bbox = boxes_c[i, :4]
@@ -110,12 +108,15 @@ class Predictor:
                 # 判别为人脸的置信度
                 cv2.putText(img, name, (corpbbox[0], corpbbox[1] - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
         cv2.imshow("result", img)
-        cv2.waitKey(0)
+        cv2.waitKey(1)
 
 
 if __name__ == '__main__':
     predictor = Predictor(args.mtcnn_model_path, args.mobilefacenet_model_path, args.face_db_path)
-    boxes, names = predictor.recognition(args.image_path)
-    predictor.draw_face(args.image_path, boxes, names)
-    print(boxes)
-    print(names)
+    cap = cv2.VideoCapture(args.camera_id)
+    while True:
+        ret, img = cap.read()
+        if ret:
+            boxes, names = predictor.recognition(img)
+            predictor.draw_face(img, boxes, names)
+            print(names)
