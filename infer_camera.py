@@ -65,7 +65,7 @@ class Predictor:
             img = img[np.newaxis, :]
         img = paddle.to_tensor(img, dtype='float32')
         # 执行预测
-        feature = self.model(img)
+        _, feature = self.model(img)
         return feature.numpy()
 
     def recognition(self, img):

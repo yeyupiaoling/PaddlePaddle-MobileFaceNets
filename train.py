@@ -37,7 +37,7 @@ def test(model, test_loader):
     accuracies = []
     for batch_id, (img, label) in enumerate(test_loader()):
         label = paddle.reshape(label, shape=(-1, 1))
-        out = model(img)
+        out, _ = model(img)
         acc = accuracy(input=out, label=label)
         accuracies.append(acc.numpy()[0])
     model.train()
@@ -45,7 +45,7 @@ def test(model, test_loader):
 
 
 # 保存模型
-def save_model(args, model, model_feature, optimizer):
+def save_model(args, model, optimizer):
     if not os.path.exists(os.path.join(args.save_model, 'params')):
         os.makedirs(os.path.join(args.save_model, 'params'))
     if not os.path.exists(os.path.join(args.save_model, 'infer')):
@@ -54,7 +54,7 @@ def save_model(args, model, model_feature, optimizer):
     paddle.save(model.state_dict(), os.path.join(args.save_model, 'params/model.pdparams'))
     paddle.save(optimizer.state_dict(), os.path.join(args.save_model, 'params/optimizer.pdopt'))
     # 保存预测模型
-    paddle.jit.save(layer=model_feature,
+    paddle.jit.save(layer=model,
                     path=os.path.join(args.save_model, 'infer/model'),
                     input_spec=[InputSpec(shape=[None, 3, 112, 112], dtype='float32')])
 
@@ -74,9 +74,7 @@ def train(args):
     test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
 
     # 获取模型
-    model_feature = MobileFaceNet()
-    model = paddle.nn.Sequential(model_feature,
-                                 paddle.nn.Linear(in_features=512, out_features=args.num_classes))
+    model = MobileFaceNet(args.num_classes)
     if dist.get_rank() == 0:
         paddle.summary(model, input_size=(None, 3, 112, 112))
     # 设置支持多卡训练
@@ -111,14 +109,15 @@ def train(args):
         optimizer.set_state_dict(paddle.load(os.path.join(args.resume, 'optimizer.pdopt')))
 
     # 获取损失函数
-    loss = nn.CrossEntropyLoss()
+    loss = nn.NLLLoss()
+    # loss = nn.CrossEntropyLoss()
     train_step = 0
     test_step = 0
     # 开始训练
     for epoch in range(args.num_epoch):
         loss_sum = []
         for batch_id, (img, label) in enumerate(train_loader()):
-            out = model(img)
+            out, _ = model(img)
             # 计算损失值
             los = loss(out, label)
             loss_sum.append(los)
@@ -140,7 +139,7 @@ def train(args):
             # 记录学习率
             writer.add_scalar('Learning rate', scheduler.last_lr, epoch)
             test_step += 1
-            save_model(args, model, model_feature, optimizer)
+            save_model(args, model, optimizer)
         scheduler.step()
 
 

@@ -1,4 +1,5 @@
 import paddle
+from .ArcLoss import ArcSoftmax
 from paddle.nn import Linear, Conv2D, BatchNorm1D, BatchNorm2D, PReLU, Sequential, Flatten
 
 
@@ -62,7 +63,7 @@ class Residual(paddle.nn.Layer):
 
 
 class MobileFaceNet(paddle.nn.Layer):
-    def __init__(self):
+    def __init__(self, num_classes):
         super(MobileFaceNet, self).__init__()
         self.conv1 = ConvBlock(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
         self.conv2_dw = ConvBlock(64, 64, kernel=(3, 3), stride=(1, 1), padding=(1, 1), groups=64)
@@ -77,6 +78,8 @@ class MobileFaceNet(paddle.nn.Layer):
         self.conv_6_flatten = Flatten()
         self.linear = Linear(in_features=512, out_features=512)
         self.bn = BatchNorm1D(512)
+        # self.out = paddle.nn.Linear(in_features=512, out_features=num_classes)
+        self.arc_softmax = ArcSoftmax(512, num_classes)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -92,4 +95,7 @@ class MobileFaceNet(paddle.nn.Layer):
         x = self.conv_6_flatten(x)
         x = self.linear(x)
         feature = self.bn(x)
-        return feature
+        # output = self.out(feature)
+        arc_softmax = self.arc_softmax(feature)
+        output = paddle.log(arc_softmax)
+        return output, feature
