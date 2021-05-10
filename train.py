@@ -49,14 +49,13 @@ def test(model, metric_fc, test_loader):
 
 
 # 保存模型
-def save_model(args, model, metric_fc, optimizer):
+def save_model(args, model, optimizer):
     if not os.path.exists(os.path.join(args.save_model, 'params')):
         os.makedirs(os.path.join(args.save_model, 'params'))
     if not os.path.exists(os.path.join(args.save_model, 'infer')):
         os.makedirs(os.path.join(args.save_model, 'infer'))
     # 保存模型参数
     paddle.save(model.state_dict(), os.path.join(args.save_model, 'params/model.pdparams'))
-    paddle.save(metric_fc.state_dict(), os.path.join(args.save_model, 'params/metric_fc.pdparams'))
     paddle.save(optimizer.state_dict(), os.path.join(args.save_model, 'params/optimizer.pdopt'))
     # 保存预测模型
     paddle.jit.save(layer=model,
@@ -111,24 +110,10 @@ def train(args):
                 print('Lack weight: {}'.format(name))
         model.set_dict(model_state_dict)
         print('成功加载 model 参数')
-        # 分类层
-        metric_fc_dict = metric_fc.state_dict()
-        metric_fc_state_dict = paddle.load(os.path.join(args.pretrained_model, 'metric_fc.pdparams'))
-        for name, weight in metric_fc_dict.items():
-            if name in metric_fc_state_dict.keys():
-                if weight.shape != list(metric_fc_state_dict[name].shape):
-                    print('{} not used, shape {} unmatched with {} in model.'.
-                            format(name, list(metric_fc_state_dict[name].shape), weight.shape))
-                    metric_fc_state_dict.pop(name, None)
-            else:
-                print('Lack weight: {}'.format(name))
-        metric_fc.set_dict(metric_fc_state_dict)
-        print('成功加载 metric_fc 参数')
 
     # 恢复训练
     if args.resume is not None:
         model.set_state_dict(paddle.load(os.path.join(args.pretrained_model, 'model.pdparams')))
-        metric_fc.set_state_dict(paddle.load(os.path.join(args.pretrained_model, 'metric_fc.pdparams')))
         optimizer.set_state_dict(paddle.load(os.path.join(args.resume, 'optimizer.pdopt')))
         print('成功加载模型参数和优化方法参数')
 
@@ -163,7 +148,7 @@ def train(args):
             # 记录学习率
             writer.add_scalar('Learning rate', scheduler.last_lr, epoch)
             test_step += 1
-            save_model(args, model, metric_fc, optimizer)
+            save_model(args, model, optimizer)
         scheduler.step()
 
 
