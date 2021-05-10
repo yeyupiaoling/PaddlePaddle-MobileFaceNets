@@ -35,13 +35,14 @@ args = parser.parse_args()
 
 
 # 评估模型
-def test(model, test_loader):
+def test(model, metric_fc, test_loader):
     model.eval()
     accuracies = []
     for batch_id, (img, label) in enumerate(test_loader()):
+        feature = model(img)
+        output = metric_fc(feature, label)
         label = paddle.reshape(label, shape=(-1, 1))
-        out, _ = model(img)
-        acc = accuracy(input=out, label=label)
+        acc = accuracy(input=output, label=label)
         accuracies.append(acc.numpy()[0])
     model.train()
     return float(sum(accuracies) / len(accuracies))
@@ -54,7 +55,8 @@ def save_model(args, model, metric_fc, optimizer):
     if not os.path.exists(os.path.join(args.save_model, 'infer')):
         os.makedirs(os.path.join(args.save_model, 'infer'))
     # 保存模型参数
-    paddle.save(metric_fc.state_dict(), os.path.join(args.save_model, 'params/model.pdparams'))
+    paddle.save(model.state_dict(), os.path.join(args.save_model, 'params/model.pdparams'))
+    paddle.save(metric_fc.state_dict(), os.path.join(args.save_model, 'params/metric_fc.pdparams'))
     paddle.save(optimizer.state_dict(), os.path.join(args.save_model, 'params/optimizer.pdopt'))
     # 保存预测模型
     paddle.jit.save(layer=model,
@@ -97,26 +99,41 @@ def train(args):
     # 加载预训练模型
     if args.pretrained_model is not None:
         model_dict = model.state_dict()
-        param_state_dict = paddle.load(os.path.join(args.pretrained_model, 'model.pdparams'))
+        model_state_dict = paddle.load(os.path.join(args.pretrained_model, 'model.pdparams'))
+        # 特征层
         for name, weight in model_dict.items():
-            if name in param_state_dict.keys():
-                if weight.shape != list(param_state_dict[name].shape):
+            if name in model_state_dict.keys():
+                if weight.shape != list(model_state_dict[name].shape):
                     print('{} not used, shape {} unmatched with {} in model.'.
-                            format(name, list(param_state_dict[name].shape), weight.shape))
-                    param_state_dict.pop(name, None)
+                            format(name, list(model_state_dict[name].shape), weight.shape))
+                    model_state_dict.pop(name, None)
             else:
                 print('Lack weight: {}'.format(name))
-        model.set_dict(param_state_dict)
+        model.set_dict(model_state_dict)
+        print('成功加载 model 参数')
+        # 分类层
+        metric_fc_dict = metric_fc.state_dict()
+        metric_fc_state_dict = paddle.load(os.path.join(args.pretrained_model, 'metric_fc.pdparams'))
+        for name, weight in metric_fc_dict.items():
+            if name in metric_fc_state_dict.keys():
+                if weight.shape != list(metric_fc_state_dict[name].shape):
+                    print('{} not used, shape {} unmatched with {} in model.'.
+                            format(name, list(metric_fc_state_dict[name].shape), weight.shape))
+                    metric_fc_state_dict.pop(name, None)
+            else:
+                print('Lack weight: {}'.format(name))
+        metric_fc.set_dict(metric_fc_state_dict)
+        print('成功加载 metric_fc 参数')
 
     # 恢复训练
     if args.resume is not None:
-        model.set_state_dict(paddle.load(os.path.join(args.resume, 'model.pdparams')))
+        model.set_state_dict(paddle.load(os.path.join(args.pretrained_model, 'model.pdparams')))
+        metric_fc.set_state_dict(paddle.load(os.path.join(args.pretrained_model, 'metric_fc.pdparams')))
         optimizer.set_state_dict(paddle.load(os.path.join(args.resume, 'optimizer.pdopt')))
+        print('成功加载模型参数和优化方法参数')
 
     # 获取损失函数
     loss = FocalLoss(gamma=args.gamma)
-    # loss = nn.NLLLoss(reduction='sum')
-    # loss = nn.CrossEntropyLoss()
     train_step = 0
     test_step = 0
     # 开始训练
@@ -140,7 +157,7 @@ def train(args):
                 loss_sum = []
         # 多卡训练只使用一个进程执行评估和保存模型
         if dist.get_rank() == 0:
-            acc = test(model, test_loader)
+            acc = test(model, metric_fc, test_loader)
             print('[%s] Train epoch %d, accuracy: %f' % (datetime.now(), epoch, acc))
             writer.add_scalar('Test acc', acc, test_step)
             # 记录学习率

@@ -109,12 +109,10 @@ class ArcMarginProduct(paddle.nn.Layer):
         """
     def __init__(self, feature_dim, class_dim, s=30.0, m=0.50, easy_margin=False):
         super(ArcMarginProduct, self).__init__()
+        self.weight = paddle.to_tensor(paddle.randn((feature_dim, class_dim), dtype='float32'), stop_gradient=False)
         self.class_dim = class_dim
         self.s = s
         self.m = m
-        # self.weight = Parameter(torch.FloatTensor(feature_dim, class_dim))
-        self.weight = paddle.to_tensor(paddle.zeros((feature_dim, class_dim), dtype='float32'), stop_gradient=False)
-        paddle.nn.initializer.XavierUniform(self.weight)
 
         self.easy_margin = easy_margin
         self.cos_m = math.cos(m)
