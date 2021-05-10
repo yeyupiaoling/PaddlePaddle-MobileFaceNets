@@ -1,11 +1,10 @@
 import random
-import time
 
-from skimage import transform as trans
 import cv2
 import numpy as np
 from PIL import Image, ImageEnhance
 from paddle.io import Dataset
+from skimage import transform as trans
 
 
 def random_brightness(img, lower=0.7, upper=1.3):

@@ -109,7 +109,7 @@ def train(args):
         optimizer.set_state_dict(paddle.load(os.path.join(args.resume, 'optimizer.pdopt')))
 
     # 获取损失函数
-    loss = nn.NLLLoss()
+    loss = nn.NLLLoss(reduction='sum')
     # loss = nn.CrossEntropyLoss()
     train_step = 0
     test_step = 0
