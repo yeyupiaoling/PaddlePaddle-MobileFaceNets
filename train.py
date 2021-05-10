@@ -6,12 +6,13 @@ from datetime import datetime
 
 import paddle
 import paddle.distributed as dist
-import paddle.nn as nn
 from paddle.io import DataLoader
 from paddle.metric import accuracy
 from paddle.static import InputSpec
 from visualdl import LogWriter
-from utils.mobilefacenet import MobileFaceNet
+
+from utils.focal_loss import FocalLoss
+from utils.mobilefacenet import MobileFaceNet, ArcMarginProduct
 from utils.reader import CustomDataset
 from utils.utility import add_arguments, print_arguments
 
@@ -23,6 +24,8 @@ add_arg('num_workers',      int,    16,                       '读取数据的�
 add_arg('num_epoch',        int,    120,                      '训练的轮数')
 add_arg('num_classes',      int,    10177,                    '分类的类别数量')
 add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
+add_arg('easy_margin',      bool,   False,                    '模型训练是否使用简易的边界计算')
+add_arg('gamma',            float,  2,                        'FocalLoss的gamma参数')
 add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
 add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
 add_arg('save_model',       str,    'models/mobilefacenet',   '模型保存的路径')
@@ -45,13 +48,13 @@ def test(model, test_loader):
 
 
 # 保存模型
-def save_model(args, model, optimizer):
+def save_model(args, model, metric_fc, optimizer):
     if not os.path.exists(os.path.join(args.save_model, 'params')):
         os.makedirs(os.path.join(args.save_model, 'params'))
     if not os.path.exists(os.path.join(args.save_model, 'infer')):
         os.makedirs(os.path.join(args.save_model, 'infer'))
     # 保存模型参数
-    paddle.save(model.state_dict(), os.path.join(args.save_model, 'params/model.pdparams'))
+    paddle.save(metric_fc.state_dict(), os.path.join(args.save_model, 'params/model.pdparams'))
     paddle.save(optimizer.state_dict(), os.path.join(args.save_model, 'params/optimizer.pdopt'))
     # 保存预测模型
     paddle.jit.save(layer=model,
@@ -74,18 +77,20 @@ def train(args):
     test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
 
     # 获取模型
-    model = MobileFaceNet(args.num_classes)
+    model = MobileFaceNet()
+    metric_fc = ArcMarginProduct(feature_dim=512, class_dim=args.num_classes, easy_margin=args.easy_margin)
     if dist.get_rank() == 0:
         paddle.summary(model, input_size=(None, 3, 112, 112))
     # 设置支持多卡训练
     model = paddle.DataParallel(model)
+    metric_fc = paddle.DataParallel(metric_fc)
 
     # 分段学习率
     boundaries = [10, 30, 70, 100]
     lr = [0.1 ** l * args.learning_rate for l in range(len(boundaries) + 1)]
     scheduler = paddle.optimizer.lr.PiecewiseDecay(boundaries=boundaries, values=lr, verbose=True)
     # 设置优化方法
-    optimizer = paddle.optimizer.Adam(parameters=model.parameters(),
+    optimizer = paddle.optimizer.Adam(parameters=model.parameters() + metric_fc.parameters(),
                                       learning_rate=scheduler,
                                       weight_decay=paddle.regularizer.L2Decay(1e-4))
 
@@ -109,7 +114,8 @@ def train(args):
         optimizer.set_state_dict(paddle.load(os.path.join(args.resume, 'optimizer.pdopt')))
 
     # 获取损失函数
-    loss = nn.NLLLoss(reduction='sum')
+    loss = FocalLoss(gamma=args.gamma)
+    # loss = nn.NLLLoss(reduction='sum')
     # loss = nn.CrossEntropyLoss()
     train_step = 0
     test_step = 0
@@ -117,9 +123,10 @@ def train(args):
     for epoch in range(args.num_epoch):
         loss_sum = []
         for batch_id, (img, label) in enumerate(train_loader()):
-            out, _ = model(img)
+            feature = model(img)
+            output = metric_fc(feature, label)
             # 计算损失值
-            los = loss(out, label)
+            los = loss(output, label)
             loss_sum.append(los)
             los.backward()
             optimizer.step()
@@ -139,7 +146,7 @@ def train(args):
             # 记录学习率
             writer.add_scalar('Learning rate', scheduler.last_lr, epoch)
             test_step += 1
-            save_model(args, model, optimizer)
+            save_model(args, model, metric_fc, optimizer)
         scheduler.step()
 
 

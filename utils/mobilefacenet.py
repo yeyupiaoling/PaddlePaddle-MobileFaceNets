@@ -1,5 +1,7 @@
+import math
+
+import paddle.nn.functional as F
 import paddle
-from .ArcLoss import ArcSoftmax
 from paddle.nn import Linear, Conv2D, BatchNorm1D, BatchNorm2D, PReLU, Sequential, Flatten
 
 
@@ -63,7 +65,7 @@ class Residual(paddle.nn.Layer):
 
 
 class MobileFaceNet(paddle.nn.Layer):
-    def __init__(self, num_classes):
+    def __init__(self):
         super(MobileFaceNet, self).__init__()
         self.conv1 = ConvBlock(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
         self.conv2_dw = ConvBlock(64, 64, kernel=(3, 3), stride=(1, 1), padding=(1, 1), groups=64)
@@ -78,8 +80,6 @@ class MobileFaceNet(paddle.nn.Layer):
         self.conv_6_flatten = Flatten()
         self.linear = Linear(in_features=512, out_features=512)
         self.bn = BatchNorm1D(512)
-        # self.out = paddle.nn.Linear(in_features=512, out_features=num_classes)
-        self.arc_softmax = ArcSoftmax(512, num_classes)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -95,7 +95,42 @@ class MobileFaceNet(paddle.nn.Layer):
         x = self.conv_6_flatten(x)
         x = self.linear(x)
         feature = self.bn(x)
-        # output = self.out(feature)
-        arc_softmax = self.arc_softmax(feature)
-        output = paddle.log(arc_softmax)
-        return output, feature
+        return feature
+
+
+class ArcMarginProduct(paddle.nn.Layer):
+    r"""Implement of large margin arc distance: :
+        Args:
+            feature_dim: size of each input sample
+            class_dim: size of each output sample
+            s: norm of input feature
+            m: margin
+            cos(theta + m)
+        """
+    def __init__(self, feature_dim, class_dim, s=30.0, m=0.50, easy_margin=False):
+        super(ArcMarginProduct, self).__init__()
+        self.class_dim = class_dim
+        self.s = s
+        self.m = m
+        # self.weight = Parameter(torch.FloatTensor(feature_dim, class_dim))
+        self.weight = paddle.to_tensor(paddle.zeros((feature_dim, class_dim), dtype='float32'), stop_gradient=False)
+        paddle.nn.initializer.XavierUniform(self.weight)
+
+        self.easy_margin = easy_margin
+        self.cos_m = math.cos(m)
+        self.sin_m = math.sin(m)
+        self.th = math.cos(math.pi - m)
+        self.mm = math.sin(math.pi - m) * m
+
+    def forward(self, input, label):
+        cosine = F.linear(F.normalize(input), F.normalize(self.weight))
+        sine = paddle.sqrt(paddle.clip(1.0 - paddle.pow(cosine, 2), min=0, max=1))
+        phi = cosine * self.cos_m - sine * self.sin_m
+        if self.easy_margin:
+            phi = paddle.where(cosine > 0, phi, cosine)
+        else:
+            phi = paddle.where(cosine > self.th, phi, cosine - self.mm)
+        one_hot = paddle.nn.functional.one_hot(label, self.class_dim)
+        output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
+        output *= self.s
+        return output
