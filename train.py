@@ -12,7 +12,8 @@ from paddle.static import InputSpec
 from visualdl import LogWriter
 
 from utils.focal_loss import FocalLoss
-from utils.mobilefacenet import MobileFaceNet, ArcMarginProduct
+from utils.mobilefacenet import MobileFaceNet
+from utils.ArcMargin import ArcMarginProduct
 from utils.reader import CustomDataset
 from utils.utility import add_arguments, print_arguments
 
