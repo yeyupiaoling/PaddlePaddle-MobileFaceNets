@@ -8,6 +8,8 @@ class ArcSoftmax(nn.Layer):
         super(ArcSoftmax, self).__init__()
         # 生成一个隔离带向量，训练这个向量和原来的特征向量分开，达到增加角度的目的
         self.W = paddle.to_tensor(paddle.randn((feature_dim, class_dim), dtype='float32'), stop_gradient=False)
+        # Pytorch的写法
+        # self.W = nn.Parameter(torch.randn(feature_dim, cls_dim).cuda(), requires_grad=True)
 
     def forward(self, feature, m=1, s=64):
         # 对特征维度进行标准化
