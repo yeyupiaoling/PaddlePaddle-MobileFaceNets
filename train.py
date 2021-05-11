@@ -21,10 +21,10 @@ parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('gpu',              str,    '0,1',                    '训练使用的GPU序号')
 add_arg('batch_size',       int,    64,                       '训练的批量大小')
-add_arg('num_workers',      int,    16,                       '读取数据的线程数量')
+add_arg('num_workers',      int,    8,                        '读取数据的线程数量')
 add_arg('num_epoch',        int,    120,                      '训练的轮数')
 add_arg('num_classes',      int,    10177,                    '分类的类别数量')
-add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
+add_arg('learning_rate',    float,  1e-1,                     '初始学习率的大小')
 add_arg('easy_margin',      bool,   False,                    '模型训练是否使用简易的边界计算')
 add_arg('gamma',            float,  2,                        'FocalLoss的gamma参数')
 add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
@@ -73,10 +73,10 @@ def train(args):
         writer = LogWriter(logdir='log')
     # 获取数据
     train_dataset = CustomDataset(args.train_list_path, is_train=True)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, use_shared_memory=False)
 
     test_dataset = CustomDataset(args.test_list_path, is_train=False)
-    test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
+    test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, num_workers=args.num_workers, use_shared_memory=False)
 
     # 获取模型
     model = MobileFaceNet()
@@ -89,7 +89,7 @@ def train(args):
 
     # 分段学习率
     boundaries = [10, 30, 70, 100]
-    lr = [0.1 ** l * args.learning_rate for l in range(len(boundaries) + 1)]
+    lr = [0.5 ** l * args.learning_rate for l in range(len(boundaries) + 1)]
     scheduler = paddle.optimizer.lr.PiecewiseDecay(boundaries=boundaries, values=lr, verbose=True)
     # 设置优化方法
     optimizer = paddle.optimizer.Adam(parameters=model.parameters() + metric_fc.parameters(),

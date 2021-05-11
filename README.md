@@ -11,6 +11,8 @@
 1. 执行`python3 create_data_list.py` 创建训练的数据列表
 2. 执行`python3 train.py` 执行训练
 
+**待解决问：** 模型不收敛问题
+
 
 ## 预测
 1. 执行`python3 infer.py` 识别这里两张人脸的相似度。
