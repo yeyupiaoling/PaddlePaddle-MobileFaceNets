@@ -13,7 +13,7 @@ from visualdl import LogWriter
 
 from utils.focal_loss import FocalLoss
 from utils.mobilefacenet import MobileFaceNet
-from utils.ArcMargin import ArcMarginProduct
+from utils.ArcMargin import ArcNet
 from utils.reader import CustomDataset
 from utils.utility import add_arguments, print_arguments
 
@@ -25,7 +25,6 @@ add_arg('num_workers',      int,    8,                        '读取数据的�
 add_arg('num_epoch',        int,    120,                      '训练的轮数')
 add_arg('num_classes',      int,    10177,                    '分类的类别数量')
 add_arg('learning_rate',    float,  1e-1,                     '初始学习率的大小')
-add_arg('easy_margin',      bool,   False,                    '模型训练是否使用简易的边界计算')
 add_arg('gamma',            float,  2,                        'FocalLoss的gamma参数')
 add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
 add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
@@ -36,6 +35,7 @@ args = parser.parse_args()
 
 
 # 评估模型
+@paddle.no_grad()
 def test(model, metric_fc, test_loader):
     model.eval()
     accuracies = []
@@ -80,21 +80,20 @@ def train(args):
 
     # 获取模型
     model = MobileFaceNet()
-    metric_fc = ArcMarginProduct(feature_dim=512, class_dim=args.num_classes, easy_margin=args.easy_margin)
+    metric_fc = ArcNet(feature_dim=512, class_dim=args.num_classes)
     if dist.get_rank() == 0:
         paddle.summary(model, input_size=(None, 3, 112, 112))
     # 设置支持多卡训练
     model = paddle.DataParallel(model)
     metric_fc = paddle.DataParallel(metric_fc)
 
-    # 分段学习率
-    boundaries = [10, 30, 70, 100]
-    lr = [0.5 ** l * args.learning_rate for l in range(len(boundaries) + 1)]
-    scheduler = paddle.optimizer.lr.PiecewiseDecay(boundaries=boundaries, values=lr, verbose=True)
+    # 学习率衰减
+    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=5, gamma=0.8, verbose=True)
     # 设置优化方法
-    optimizer = paddle.optimizer.Adam(parameters=model.parameters() + metric_fc.parameters(),
-                                      learning_rate=scheduler,
-                                      weight_decay=paddle.regularizer.L2Decay(1e-4))
+    optimizer = paddle.optimizer.Momentum(parameters=model.parameters() + metric_fc.parameters(),
+                                          momentum=0.9,
+                                          learning_rate=scheduler,
+                                          weight_decay=5e-4)
 
     # 加载预训练模型
     if args.pretrained_model is not None:

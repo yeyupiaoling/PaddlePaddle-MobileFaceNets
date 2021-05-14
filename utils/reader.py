@@ -73,7 +73,7 @@ def process(img, landmark, image_size=112, is_train=False):
         # 转回cv2
         img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
     img = img.transpose((2, 0, 1))
-    img = (img - 127.5) / 128.0
+    img = (img - 128) / 128
     return img
 
 
