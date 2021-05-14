@@ -13,6 +13,7 @@ from visualdl import LogWriter
 
 from utils.focal_loss import FocalLoss
 from utils.mobilefacenet import MobileFaceNet
+from utils.resnet import *
 from utils.ArcMargin import ArcNet
 from utils.reader import CustomDataset
 from utils.utility import add_arguments, print_arguments
@@ -25,6 +26,7 @@ add_arg('num_workers',      int,    8,                        '读取数据的�
 add_arg('num_epoch',        int,    120,                      '训练的轮数')
 add_arg('num_classes',      int,    10177,                    '分类的类别数量')
 add_arg('learning_rate',    float,  1e-1,                     '初始学习率的大小')
+add_arg('use_model',        str,    'mobilefacenet',          '所使用的模型，支持mobilefacenet，resent[18,34,52,101,152]')
 add_arg('gamma',            float,  2,                        'FocalLoss的gamma参数')
 add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
 add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
@@ -73,13 +75,26 @@ def train(args):
         writer = LogWriter(logdir='log')
     # 获取数据
     train_dataset = CustomDataset(args.train_list_path, is_train=True)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, use_shared_memory=False)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
 
     test_dataset = CustomDataset(args.test_list_path, is_train=False)
-    test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, num_workers=args.num_workers, use_shared_memory=False)
+    test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
 
-    # 获取模型
-    model = MobileFaceNet()
+    # 获取模型，贴心的作者同时提供了resnet的模型，以满足不同情况的使用
+    if args.use_model == 'mobilefacenet':
+        model = MobileFaceNet()
+    elif args.use_model == 'resent18':
+        model = resnet18()
+    elif args.use_model == 'resent34':
+        model = resnet34()
+    elif args.use_model == 'resent50':
+        model = resnet50()
+    elif args.use_model == 'resent101':
+        model = resnet101()
+    elif args.use_model == 'resent152':
+        model = resnet152()
+    else:
+        model = MobileFaceNet()
     metric_fc = ArcNet(feature_dim=512, class_dim=args.num_classes)
     if dist.get_rank() == 0:
         paddle.summary(model, input_size=(None, 3, 112, 112))
@@ -88,7 +103,7 @@ def train(args):
     metric_fc = paddle.DataParallel(metric_fc)
 
     # 学习率衰减
-    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=5, gamma=0.8, verbose=True)
+    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=10, gamma=0.1, verbose=True)
     # 设置优化方法
     optimizer = paddle.optimizer.Momentum(parameters=model.parameters() + metric_fc.parameters(),
                                           momentum=0.9,

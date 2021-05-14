@@ -43,7 +43,7 @@ class DepthWise(paddle.nn.Layer):
         x = self.conv_dw(x)
         x = self.project(x)
         if self.residual:
-            output = paddle.add(short_cut, x)
+            output = short_cut + x
         else:
             output = x
         return output
