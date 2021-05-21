@@ -61,12 +61,6 @@ class Residual(paddle.nn.Layer):
         return self.model(x)
 
 
-def l2_norm(data, axis=1):
-    norm = paddle.norm(data, 2, axis, True)
-    output = paddle.divide(data, norm)
-    return output
-
-
 class MobileFaceNet(paddle.nn.Layer):
     def __init__(self):
         super(MobileFaceNet, self).__init__()
@@ -98,4 +92,4 @@ class MobileFaceNet(paddle.nn.Layer):
         x = self.conv_6_flatten(x)
         x = self.linear(x)
         feature = self.bn(x)
-        return l2_norm(feature)
+        return feature

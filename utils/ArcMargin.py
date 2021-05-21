@@ -3,7 +3,6 @@ import math
 import paddle
 from paddle.nn.initializer import XavierUniform
 import paddle.nn.functional as F
-from .mobilefacenet import l2_norm
 
 
 class ArcNet(paddle.nn.Layer):
@@ -17,7 +16,7 @@ class ArcNet(paddle.nn.Layer):
 
     def __init__(self, feature_dim, class_dim, s=64.0, m=0.50):
         super(ArcNet, self).__init__()
-        self.weight = paddle.create_parameter([feature_dim, class_dim], dtype='float32', attr=XavierUniform())
+        self.weight = paddle.create_parameter([class_dim, feature_dim], dtype='float32', attr=XavierUniform())
         self.class_dim = class_dim
         self.m = m
         self.s = s
@@ -27,8 +26,7 @@ class ArcNet(paddle.nn.Layer):
         self.mm = math.sin(math.pi - m) * m
 
     def forward(self, feature, label):
-        weight = l2_norm(self.weight, axis=0)
-        cos_theta = F.linear(F.normalize(feature), F.normalize(weight))
+        cos_theta = F.linear(F.normalize(feature), paddle.transpose(F.normalize(self.weight), perm=[1, 0]))
         sin_theta = paddle.sqrt(paddle.clip(1.0 - paddle.pow(cos_theta, 2), min=0, max=1))
         cos_theta_m = cos_theta * self.cos_m - sin_theta * self.sin_m
         cos_theta_m = paddle.where(cos_theta > self.threshold, cos_theta_m, cos_theta - self.mm)

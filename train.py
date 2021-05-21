@@ -11,25 +11,24 @@ from paddle.metric import accuracy
 from paddle.static import InputSpec
 from visualdl import LogWriter
 
-from utils.focal_loss import FocalLoss
 from utils.mobilefacenet import MobileFaceNet
-from utils.resnet import *
+from utils.resnet import resnet_face34
 from utils.ArcMargin import ArcNet
 from utils.reader import CustomDataset
-from utils.utility import add_arguments, print_arguments
+from utils.utils import add_arguments, print_arguments, get_lfw_list
+from utils.utils import get_features, get_feature_dict, test_performance
 
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('gpu',              str,    '0,1',                    '训练使用的GPU序号')
 add_arg('batch_size',       int,    64,                       '训练的批量大小')
 add_arg('num_workers',      int,    8,                        '读取数据的线程数量')
-add_arg('num_epoch',        int,    120,                      '训练的轮数')
-add_arg('num_classes',      int,    10177,                    '分类的类别数量')
+add_arg('num_epoch',        int,    100,                      '训练的轮数')
+add_arg('num_classes',      int,    10575,                    '分类的类别数量')
 add_arg('learning_rate',    float,  1e-1,                     '初始学习率的大小')
-add_arg('use_model',        str,    'mobilefacenet',          '所使用的模型，支持mobilefacenet，resent[18,34,52,101,152]')
-add_arg('gamma',            float,  2,                        'FocalLoss的gamma参数')
-add_arg('train_list_path',  str,    'dataset/train_list.txt', '训练数据的数据列表路径')
-add_arg('test_list_path',   str,    'dataset/test_list.txt',  '测试数据的数据列表路径')
+add_arg('use_model',        str,    'mobilefacenet',          '所使用的模型，支持mobilefacenet，resnet_face34')
+add_arg('train_root_path',  str,    'dataset/CASIA-WebFace',  '训练数据的根目录')
+add_arg('test_list_path',   str,    'dataset/lfw_test.txt',   '测试数据的数据列表路径')
 add_arg('save_model',       str,    'models/mobilefacenet',   '模型保存的路径')
 add_arg('resume',           str,    None,                     '恢复训练，当为None则不使用预训练模型，使用恢复训练模型最好同时也改学习率')
 add_arg('pretrained_model', str,    None,                     '预训练模型的路径，当为None则不使用预训练模型')
@@ -38,17 +37,15 @@ args = parser.parse_args()
 
 # 评估模型
 @paddle.no_grad()
-def test(model, metric_fc, test_loader):
+def test(model):
     model.eval()
-    accuracies = []
-    for batch_id, (img, label) in enumerate(test_loader()):
-        feature = model(img)
-        output = metric_fc(feature, label)
-        label = paddle.reshape(label, shape=(-1, 1))
-        acc = accuracy(input=output, label=label)
-        accuracies.append(acc.numpy()[0])
+    # 获取测试数据
+    img_paths = get_lfw_list(args.test_list_path)
+    features = get_features(model, img_paths, batch_size=args.batch_size)
+    fe_dict = get_feature_dict(img_paths, features)
+    accuracy, _ = test_performance(fe_dict, args.test_list_path)
     model.train()
-    return float(sum(accuracies) / len(accuracies))
+    return accuracy
 
 
 # 保存模型
@@ -74,25 +71,12 @@ def train(args):
         # 日志记录器
         writer = LogWriter(logdir='log')
     # 获取数据
-    train_dataset = CustomDataset(args.train_list_path, is_train=True)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-
-    test_dataset = CustomDataset(args.test_list_path, is_train=False)
-    test_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
+    train_dataset = CustomDataset(args.train_root_path, is_train=True)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
 
     # 获取模型，贴心的作者同时提供了resnet的模型，以满足不同情况的使用
-    if args.use_model == 'mobilefacenet':
-        model = MobileFaceNet()
-    elif args.use_model == 'resent18':
-        model = resnet18()
-    elif args.use_model == 'resent34':
-        model = resnet34()
-    elif args.use_model == 'resent50':
-        model = resnet50()
-    elif args.use_model == 'resent101':
-        model = resnet101()
-    elif args.use_model == 'resent152':
-        model = resnet152()
+    if args.use_model == 'resnet_face34':
+        model = resnet_face34()
     else:
         model = MobileFaceNet()
     metric_fc = ArcNet(feature_dim=512, class_dim=args.num_classes)
@@ -105,10 +89,9 @@ def train(args):
     # 学习率衰减
     scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=10, gamma=0.1, verbose=True)
     # 设置优化方法
-    optimizer = paddle.optimizer.Momentum(parameters=model.parameters() + metric_fc.parameters(),
-                                          momentum=0.9,
-                                          learning_rate=scheduler,
-                                          weight_decay=5e-4)
+    optimizer = paddle.optimizer.SGD(parameters=model.parameters() + metric_fc.parameters(),
+                                     learning_rate=scheduler,
+                                     weight_decay=5e-4)
 
     # 加载预训练模型
     if args.pretrained_model is not None:
@@ -133,31 +116,36 @@ def train(args):
         print('成功加载模型参数和优化方法参数')
 
     # 获取损失函数
-    loss = FocalLoss(gamma=args.gamma)
+    loss = paddle.nn.CrossEntropyLoss()
     train_step = 0
     test_step = 0
     # 开始训练
     for epoch in range(args.num_epoch):
         loss_sum = []
+        accuracies = []
         for batch_id, (img, label) in enumerate(train_loader()):
             feature = model(img)
             output = metric_fc(feature, label)
             # 计算损失值
             los = loss(output, label)
-            loss_sum.append(los)
+            loss_sum.append(los.numpy()[0])
             los.backward()
             optimizer.step()
             optimizer.clear_grad()
+            # 计算准确率
+            label = paddle.reshape(label, shape=(-1, 1))
+            acc = accuracy(input=output, label=label)
+            accuracies.append(acc.numpy()[0])
             # 多卡训练只使用一个进程打印
             if batch_id % 100 == 0 and dist.get_rank() == 0:
-                print('[%s] Train epoch %d, batch_id: %d, loss: %f' % (
-                    datetime.now(), epoch, batch_id, sum(loss_sum) / len(loss_sum)))
+                print('[%s] Train epoch %d, batch_id: %d, loss: %f, accuracy: %f' % (
+                    datetime.now(), epoch, batch_id, sum(loss_sum) / len(loss_sum), sum(accuracies) / len(accuracies)))
                 writer.add_scalar('Train loss', los, train_step)
                 train_step += 1
                 loss_sum = []
         # 多卡训练只使用一个进程执行评估和保存模型
         if dist.get_rank() == 0:
-            acc = test(model, metric_fc, test_loader)
+            acc = test(model)
             print('[%s] Train epoch %d, accuracy: %f' % (datetime.now(), epoch, acc))
             writer.add_scalar('Test acc', acc, test_step)
             # 记录学习率
