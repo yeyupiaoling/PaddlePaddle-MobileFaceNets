@@ -60,6 +60,7 @@ class CustomDataset(Dataset):
                 self.data.append([image_path, person_id])
             person_id += 1
         self.is_train = is_train
+        random.shuffle(self.data)
 
     def __getitem__(self, idx):
         img_path, label = self.data[idx]

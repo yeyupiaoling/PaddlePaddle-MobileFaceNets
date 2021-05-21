@@ -38,25 +38,23 @@ class Predictor:
             name = os.path.basename(path).split('.')[0]
             image_path = os.path.join(face_db_path, path)
             img = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), -1)
-            _, imgs = self.detection(img)
-            feature = self.infer(imgs[0])
+            imgs, _ = self.mtcnn.infer_image(img)
+            imgs = self.process(imgs)
             if imgs is None or len(imgs) > 1:
                 print('人脸库中的 %s 图片包含不是1张人脸，自动跳过该图片' % image_path)
                 continue
+            feature = self.infer(imgs[0])
             faces_db[name] = feature[0]
         return faces_db
 
-    def detection(self, img):
-        imgs = []
-        boxes, landmarks = self.mtcnn.infer_image(img)
-        if landmarks is None:
-            return None, None
-        for landmark in landmarks:
-            landmark = [[float(landmark[i]), float(landmark[i + 1])] for i in range(0, len(landmark), 2)]
-            landmark = np.array(landmark, dtype='float32')
-            img1 = process(img, landmark)
-            imgs.append(img1)
-        return boxes, imgs
+    @staticmethod
+    def process(imgs):
+        imgs1 = []
+        for img in imgs:
+            img = img.transpose((2, 0, 1))
+            img = (img - 127.5) / 127.5
+            imgs1.append(img)
+        return imgs1
 
     # 预测图片
     def infer(self, img):
@@ -69,7 +67,8 @@ class Predictor:
         return feature.numpy()
 
     def recognition(self, img):
-        boxes, imgs = self.detection(img)
+        imgs, boxes = self.mtcnn.infer_image(img)
+        imgs = self.process(imgs)
         if imgs is None:
             return None, None
         imgs = np.array(imgs, dtype='float32')

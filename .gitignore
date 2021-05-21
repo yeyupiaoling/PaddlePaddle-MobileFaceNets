@@ -1,7 +1,7 @@
 .idea/
 log/
-dataset/
+dataset/*
 temp/
+!dataset/lfw_test.zip
 models/mobilefacenet/params
 models/mobilefacenet/infer
-create_my_dataset.py

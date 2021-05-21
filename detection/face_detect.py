@@ -1,9 +1,9 @@
 import os
 
 import cv2
-import math
 import numpy as np
 import paddle
+from skimage import transform as trans
 
 from .utils import generate_bbox, py_nms, convert_to_square
 from .utils import pad, calibrate_box, processed_image
@@ -208,6 +208,25 @@ class MTCNN:
 
         return boxes_c, landmark
 
+    # 对齐
+    @staticmethod
+    def estimate_norm(lmk):
+        assert lmk.shape == (5, 2)
+        tform = trans.SimilarityTransform()
+        src = np.array([[38.2946, 51.6963],
+                        [73.5318, 51.5014],
+                        [56.0252, 71.7366],
+                        [41.5493, 92.3655],
+                        [70.7299, 92.2041]], dtype=np.float32)
+        tform.estimate(lmk, src)
+        M = tform.params[0:2, :]
+        return M
+
+    def norm_crop(self, img, landmark, image_size=112):
+        M = self.estimate_norm(landmark)
+        warped = cv2.warpAffine(img, M, (image_size, image_size), borderValue=0.0)
+        return warped
+
     def infer_image(self, im):
         # 调用第一个模型预测
         boxes_c = self.detect_pnet(im, 20, 0.79, 0.9)
@@ -218,8 +237,15 @@ class MTCNN:
         if boxes_c is None:
             return None, None
         # 调用第三个模型预测
-        boxes_c, landmark = self.detect_onet(im, boxes_c, 0.7)
+        boxes_c, landmarks = self.detect_onet(im, boxes_c, 0.7)
         if boxes_c is None:
             return None, None
+        print(landmarks)
+        imgs = []
+        for landmark in landmarks:
+            landmark = [[float(landmark[i]), float(landmark[i + 1])] for i in range(0, len(landmark), 2)]
+            landmark = np.array(landmark, dtype='float32')
+            img = self.norm_crop(im, landmark)
+            imgs.append(img)
 
-        return boxes_c, landmark
+        return imgs, boxes_c
