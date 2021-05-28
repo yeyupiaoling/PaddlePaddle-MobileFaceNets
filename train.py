@@ -156,6 +156,7 @@ def train(args):
 
 
 if __name__ == '__main__':
+    paddle.set_device("gpu")
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     print_arguments(args)
     dist.spawn(train, args=(args,))
