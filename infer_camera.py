@@ -5,10 +5,10 @@ import os
 import cv2
 import numpy as np
 import paddle
+from PIL import ImageDraw, ImageFont, Image
 
 from detection.face_detect import MTCNN
-from utils.reader import process
-from utils.utility import add_arguments, print_arguments
+from utils.utils import add_arguments, print_arguments
 
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
@@ -93,9 +93,16 @@ class Predictor:
                 names.append('unknow')
         return boxes, names
 
+    def add_text(self, img, text, left, top, color=(0, 0, 0), size=20):
+        if isinstance(img, np.ndarray):
+            img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.truetype('simsun.ttc', size)
+        draw.text((left, top), text, color, font=font)
+        return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
     # 画出人脸框和关键点
-    @staticmethod
-    def draw_face(img, boxes_c, names):
+    def draw_face(self, img, boxes_c, names):
         if boxes_c is not None:
             for i in range(boxes_c.shape[0]):
                 bbox = boxes_c[i, :4]
@@ -104,8 +111,8 @@ class Predictor:
                 # 画人脸框
                 cv2.rectangle(img, (corpbbox[0], corpbbox[1]),
                               (corpbbox[2], corpbbox[3]), (255, 0, 0), 1)
-                # 判别为人脸的置信度
-                cv2.putText(img, name, (corpbbox[0], corpbbox[1] - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                # 判别为人脸的名字
+                img = self.add_text(img, name, corpbbox[0], corpbbox[1] -15, color=(0, 0, 255), size=12)
         cv2.imshow("result", img)
         cv2.waitKey(1)
 
