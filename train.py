@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('gpu',              str,    '0,1',                    '训练使用的GPU序号')
 add_arg('batch_size',       int,    64,                       '训练的批量大小')
-add_arg('num_workers',      int,    8,                        '读取数据的线程数量')
+add_arg('num_workers',      int,    4,                        '读取数据的线程数量')
 add_arg('num_epoch',        int,    50,                       '训练的轮数')
 add_arg('num_classes',      int,    85742,                    '分类的类别数量')
 add_arg('learning_rate',    float,  1e-1,                     '初始学习率的大小')
@@ -72,7 +72,8 @@ def train(args):
         writer = LogWriter(logdir='log')
     # 获取数据
     train_dataset = CustomDataset(args.train_root_path, is_train=True)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
+    batch_sampler = paddle.io.DistributedBatchSampler(train_dataset, batch_size=args.batch_size, shuffle=True)
+    train_loader = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler, num_workers=args.num_workers)
 
     # 获取模型，贴心的作者同时提供了resnet的模型，以满足不同情况的使用
     if args.use_model == 'resnet_face34':
@@ -156,7 +157,5 @@ def train(args):
 
 
 if __name__ == '__main__':
-    paddle.set_device("gpu")
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     print_arguments(args)
-    dist.spawn(train, args=(args,))
+    dist.spawn(train, args=(args,), gpus=args.gpu)

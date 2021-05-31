@@ -5,4 +5,4 @@ pillow~=8.1.2
 visualdl~=2.1.1
 scikit-image~=0.18.1
 mxnet~=1.5.0
-paddlepaddle-gpu==2.0.2
+paddlepaddle-gpu==2.1.0
