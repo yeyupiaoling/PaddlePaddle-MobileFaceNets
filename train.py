@@ -90,9 +90,10 @@ def train(args):
     # 学习率衰减
     scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=10, gamma=0.1, verbose=True)
     # 设置优化方法
-    optimizer = paddle.optimizer.SGD(parameters=model.parameters() + metric_fc.parameters(),
-                                     learning_rate=scheduler,
-                                     weight_decay=5e-4)
+    optimizer = paddle.optimizer.Momentum(parameters=model.parameters() + metric_fc.parameters(),
+                                          learning_rate=scheduler,
+                                          momentum=0.9,
+                                          weight_decay=paddle.regularizer.L2Decay(5e-4))
 
     # 加载预训练模型
     if args.pretrained_model is not None:
