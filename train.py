@@ -1,6 +1,7 @@
 import argparse
 import functools
 import os
+import re
 import shutil
 from datetime import datetime
 
@@ -20,17 +21,16 @@ from utils.utils import get_features, get_feature_dict, test_performance
 
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
-add_arg('gpu',              str,    '0,1',                    '训练使用的GPU序号')
+add_arg('gpus',             str,    '0',                      '训练使用的GPU序号，使用英文逗号,隔开，如：0,1')
 add_arg('batch_size',       int,    64,                       '训练的批量大小')
 add_arg('num_workers',      int,    4,                        '读取数据的线程数量')
-add_arg('num_epoch',        int,    50,                       '训练的轮数')
-add_arg('num_classes',      int,    85742,                    '分类的类别数量')
+add_arg('num_epoch',        int,    100,                      '训练的轮数')
 add_arg('learning_rate',    float,  1e-1,                     '初始学习率的大小')
 add_arg('use_model',        str,    'mobilefacenet',          '所使用的模型，支持mobilefacenet，resnet_face34')
 add_arg('train_root_path',  str,    'dataset/images',         '训练数据的根目录')
 add_arg('test_list_path',   str,    'dataset/lfw_test.txt',   '测试数据的数据列表路径')
 add_arg('save_model',       str,    'models/mobilefacenet',   '模型保存的路径')
-add_arg('resume',           str,    None,                     '恢复训练，当为None则不使用预训练模型，使用恢复训练模型最好同时也改学习率')
+add_arg('resume',           str,    None,                     '恢复训练，当为None则不使用恢复模型')
 add_arg('pretrained_model', str,    None,                     '预训练模型的路径，当为None则不使用预训练模型')
 args = parser.parse_args()
 
@@ -49,30 +49,41 @@ def test(model):
 
 
 # 保存模型
-def save_model(args, model, optimizer):
-    if not os.path.exists(os.path.join(args.save_model, 'params')):
-        os.makedirs(os.path.join(args.save_model, 'params'))
+def save_model(args, epoch, model, metric_fc, optimizer):
+    model_params_path = os.path.join(args.save_model, 'params', 'epoch_%d' % epoch)
+    if not os.path.exists(model_params_path):
+        os.makedirs(model_params_path)
+    # 保存模型参数
+    paddle.save(model.state_dict(), os.path.join(model_params_path, 'model.pdparams'))
+    paddle.save(metric_fc.state_dict(), os.path.join(model_params_path, 'metric_fc.pdparams'))
+    paddle.save(optimizer.state_dict(), os.path.join(model_params_path, 'optimizer.pdopt'))
+    # 删除旧的模型
+    old_model_path = os.path.join(args.save_model, 'params', 'epoch_%d' % (epoch - 3))
+    if os.path.exists(old_model_path):
+        shutil.rmtree(old_model_path)
+    # 保存预测模型
     if not os.path.exists(os.path.join(args.save_model, 'infer')):
         os.makedirs(os.path.join(args.save_model, 'infer'))
-    # 保存模型参数
-    paddle.save(model.state_dict(), os.path.join(args.save_model, 'params/model.pdparams'))
-    paddle.save(optimizer.state_dict(), os.path.join(args.save_model, 'params/optimizer.pdopt'))
-    # 保存预测模型
     paddle.jit.save(layer=model,
                     path=os.path.join(args.save_model, 'infer/model'),
-                    input_spec=[InputSpec(shape=[None, 3, 112, 112], dtype='float32')])
+                    input_spec=[InputSpec(shape=[None, 3, 112, 112], dtype=paddle.float32)])
 
 
 def train(args):
     # 设置支持多卡训练
-    dist.init_parallel_env()
+    if len(args.gpus.split(',')) > 1:
+        dist.init_parallel_env()
     if dist.get_rank() == 0:
         shutil.rmtree('log', ignore_errors=True)
         # 日志记录器
         writer = LogWriter(logdir='log')
     # 获取数据
-    train_dataset = CustomDataset(args.train_root_path, is_train=True)
-    batch_sampler = paddle.io.DistributedBatchSampler(train_dataset, batch_size=args.batch_size, shuffle=True)
+    train_dataset = CustomDataset(args.train_root_path, is_train=False)
+    # 设置支持多卡训练
+    if len(args.gpus.split(',')) > 1:
+        batch_sampler = paddle.io.DistributedBatchSampler(train_dataset, batch_size=args.batch_size, shuffle=True)
+    else:
+        batch_sampler = paddle.io.BatchSampler(train_dataset, batch_size=args.batch_size, shuffle=True)
     train_loader = DataLoader(dataset=train_dataset, batch_sampler=batch_sampler, num_workers=args.num_workers)
 
     # 获取模型，贴心的作者同时提供了resnet的模型，以满足不同情况的使用
@@ -80,20 +91,23 @@ def train(args):
         model = resnet_face34()
     else:
         model = MobileFaceNet()
-    metric_fc = ArcNet(feature_dim=512, class_dim=args.num_classes)
+    metric_fc = ArcNet(feature_dim=512, class_dim=train_dataset.num_classes)
     if dist.get_rank() == 0:
         paddle.summary(model, input_size=(None, 3, 112, 112))
-    # 设置支持多卡训练
-    model = paddle.DataParallel(model)
-    metric_fc = paddle.DataParallel(metric_fc)
 
+    # 设置支持多卡训练
+    if len(args.gpus.split(',')) > 1:
+        model = paddle.DataParallel(model)
+        metric_fc = paddle.DataParallel(metric_fc)
+
+    # 获取预训练的epoch数
+    last_epoch = int(re.findall(r'\d+', args.resume)[-1]) + 1 if args.resume is not None else 0
     # 学习率衰减
-    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=10, gamma=0.1, verbose=True)
+    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=1, gamma=0.83, last_epoch=last_epoch, verbose=True)
     # 设置优化方法
-    optimizer = paddle.optimizer.Momentum(parameters=model.parameters() + metric_fc.parameters(),
-                                          learning_rate=scheduler,
-                                          momentum=0.9,
-                                          weight_decay=paddle.regularizer.L2Decay(5e-4))
+    optimizer = paddle.optimizer.Adam(parameters=model.parameters() + metric_fc.parameters(),
+                                      learning_rate=scheduler,
+                                      weight_decay=paddle.regularizer.L2Decay(5e-4))
 
     # 加载预训练模型
     if args.pretrained_model is not None:
@@ -104,7 +118,7 @@ def train(args):
             if name in model_state_dict.keys():
                 if weight.shape != list(model_state_dict[name].shape):
                     print('{} not used, shape {} unmatched with {} in model.'.
-                            format(name, list(model_state_dict[name].shape), weight.shape))
+                          format(name, list(model_state_dict[name].shape), weight.shape))
                     model_state_dict.pop(name, None)
             else:
                 print('Lack weight: {}'.format(name))
@@ -113,7 +127,8 @@ def train(args):
 
     # 恢复训练
     if args.resume is not None:
-        model.set_state_dict(paddle.load(os.path.join(args.pretrained_model, 'model.pdparams')))
+        model.set_state_dict(paddle.load(os.path.join(args.resume, 'model.pdparams')))
+        metric_fc.set_state_dict(paddle.load(os.path.join(args.resume, 'metric_fc.pdparams')))
         optimizer.set_state_dict(paddle.load(os.path.join(args.resume, 'optimizer.pdopt')))
         print('成功加载模型参数和优化方法参数')
 
@@ -122,7 +137,7 @@ def train(args):
     train_step = 0
     test_step = 0
     # 开始训练
-    for epoch in range(args.num_epoch):
+    for epoch in range(last_epoch, args.num_epoch):
         loss_sum = []
         accuracies = []
         for batch_id, (img, label) in enumerate(train_loader()):
@@ -148,15 +163,18 @@ def train(args):
         # 多卡训练只使用一个进程执行评估和保存模型
         if dist.get_rank() == 0:
             acc = test(model)
-            print('[%s] Train epoch %d, accuracy: %f' % (datetime.now(), epoch, acc))
+            print('[%s] Test %d, accuracy: %f' % (datetime.now(), epoch, acc))
             writer.add_scalar('Test acc', acc, test_step)
             # 记录学习率
             writer.add_scalar('Learning rate', scheduler.last_lr, epoch)
             test_step += 1
-            save_model(args, model, optimizer)
+            save_model(args, epoch, model, metric_fc, optimizer)
         scheduler.step()
 
 
 if __name__ == '__main__':
     print_arguments(args)
-    dist.spawn(train, args=(args,), gpus=args.gpu)
+    if len(args.gpus.split(',')) > 1:
+        dist.spawn(train, args=(args,), gpus=args.gpus)
+    else:
+        train(args)
