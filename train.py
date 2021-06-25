@@ -15,7 +15,7 @@ from visualdl import LogWriter
 
 from utils.mobilefacenet import MobileFaceNet
 from utils.resnet import resnet_face34
-from utils.ArcMargin import ArcNet
+from utils.metrics import ArcNet
 from utils.reader import CustomDataset
 from utils.utils import add_arguments, print_arguments, get_lfw_list
 from utils.utils import get_features, get_feature_dict, test_performance
@@ -126,14 +126,14 @@ def train(args):
             else:
                 print('Lack weight: {}'.format(name))
         model.set_dict(model_state_dict)
-        print('[%s] 成功加载 model 参数' % datetime.now())
+        print('[%s] Rank %d 成功加载 model 参数' % (datetime.now(), dist.get_rank()))
 
     # 恢复训练
     if args.resume is not None:
         model.set_state_dict(paddle.load(os.path.join(args.resume, 'model.pdparams')))
         metric_fc.set_state_dict(paddle.load(os.path.join(args.resume, 'metric_fc.pdparams')))
         optimizer.set_state_dict(paddle.load(os.path.join(args.resume, 'optimizer.pdopt')))
-        print('[%s] 成功加载模型参数和优化方法参数' % datetime.now())
+        print('[%s] Rank %d 成功加载模型参数和优化方法参数' % (datetime.now(), dist.get_rank()))
 
     # 获取损失函数
     loss = paddle.nn.CrossEntropyLoss()
@@ -155,7 +155,7 @@ def train(args):
             optimizer.clear_grad()
             # 计算准确率
             label = paddle.reshape(label, shape=(-1, 1))
-            acc = accuracy(input=output, label=label)
+            acc = accuracy(input=paddle.nn.functional.softmax(output), label=label)
             accuracies.append(acc.numpy()[0])
             loss_sum.append(los.numpy()[0])
             # 多卡训练只使用一个进程打印
