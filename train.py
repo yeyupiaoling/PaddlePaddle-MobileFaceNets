@@ -26,7 +26,7 @@ add_arg('gpus',             str,    '0',                      '训练使用的GP
 add_arg('batch_size',       int,    64,                       '训练的批量大小')
 add_arg('num_workers',      int,    4,                        '读取数据的线程数量')
 add_arg('num_epoch',        int,    50,                       '训练的轮数')
-add_arg('learning_rate',    float,  1e-1,                     '初始学习率的大小')
+add_arg('learning_rate',    float,  1e-3,                     '初始学习率的大小')
 add_arg('use_model',        str,    'mobilefacenet',          '所使用的模型，支持 mobilefacenet，resnet_face34')
 add_arg('train_root_path',  str,    'dataset/images',         '训练数据的根目录')
 add_arg('test_list_path',   str,    'dataset/lfw_test.txt',   '测试数据的数据列表路径')
