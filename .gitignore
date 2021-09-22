@@ -6,4 +6,3 @@ temp/
 !dataset/test.jpg
 models/mobilefacenet/params
 models/mobilefacenet/infer
-simsun.ttc
