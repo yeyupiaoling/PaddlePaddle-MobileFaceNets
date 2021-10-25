@@ -1,6 +1,7 @@
 import argparse
 import functools
 import os
+import time
 
 import cv2
 import numpy as np
@@ -22,7 +23,7 @@ print_arguments(args)
 
 
 class Predictor:
-    def __init__(self, mtcnn_model_path, mobilefacenet_model_path, face_db_path, threshold=0.7):
+    def __init__(self, mtcnn_model_path, mobilefacenet_model_path, face_db_path, threshold):
         self.threshold = threshold
         self.mtcnn = MTCNN(model_path=mtcnn_model_path)
 
@@ -67,12 +68,16 @@ class Predictor:
         return feature.numpy()
 
     def recognition(self, img):
+        s = time.time()
         imgs, boxes = self.mtcnn.infer_image(img)
+        print('人脸检测时间：%dms' % int((time.time() - s) * 1000))
         imgs = self.process(imgs)
         if imgs is None:
             return None, None
         imgs = np.array(imgs, dtype='float32')
+        s = time.time()
         features = self.infer(imgs)
+        print('人脸识别时间：%dms' % int((time.time() - s) * 1000))
         names = []
         probs = []
         for i in range(len(features)):
@@ -83,6 +88,7 @@ class Predictor:
                 prob = np.dot(feature, feature1) / (np.linalg.norm(feature) * np.linalg.norm(feature1))
                 results_dict[name] = prob
             results = sorted(results_dict.items(), key=lambda d: d[1], reverse=True)
+            print('人脸对比结果：', results)
             result = results[0]
             prob = float(result[1])
             probs.append(prob)
@@ -93,7 +99,8 @@ class Predictor:
                 names.append('unknow')
         return boxes, names
 
-    def add_text(self, img, text, left, top, color=(0, 0, 0), size=20):
+    @staticmethod
+    def add_text(img, text, left, top, color=(0, 0, 0), size=20):
         if isinstance(img, np.ndarray):
             img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(img)
@@ -118,11 +125,17 @@ class Predictor:
 
 
 if __name__ == '__main__':
-    predictor = Predictor(args.mtcnn_model_path, args.mobilefacenet_model_path, args.face_db_path)
+    predictor = Predictor(mtcnn_model_path=args.mtcnn_model_path,
+                          mobilefacenet_model_path=args.mobilefacenet_model_path,
+                          face_db_path=args.face_db_path,
+                          threshold=args.threshold)
     cap = cv2.VideoCapture(args.camera_id)
     while True:
         ret, img = cap.read()
         if ret:
+            start = time.time()
             boxes, names = predictor.recognition(img)
             predictor.draw_face(img, boxes, names)
-            print(names)
+            print('预测的人脸位置：', boxes.astype(np.int_).tolist())
+            print('识别的人脸名称：', names)
+            print('总识别时间：%dms' % int((time.time() - start) * 1000))

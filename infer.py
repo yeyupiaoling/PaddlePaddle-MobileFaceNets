@@ -1,6 +1,7 @@
 import argparse
 import functools
 import os
+import time
 
 import cv2
 import numpy as np
@@ -14,7 +15,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('image_path',               str,     'dataset/test.jpg',                 '预测图片路径')
 add_arg('face_db_path',             str,     'face_db',                          '人脸库路径')
-add_arg('threshold',                float,   0.7,                                '判断相识度的阈值')
+add_arg('threshold',                float,   0.5,                                '判断相识度的阈值')
 add_arg('mobilefacenet_model_path', str,     'models/mobilefacenet/infer/model', 'MobileFaceNet预测模型的路径')
 add_arg('mtcnn_model_path',         str,     'models/mtcnn',                     'MTCNN预测模型的路径')
 args = parser.parse_args()
@@ -22,7 +23,7 @@ print_arguments(args)
 
 
 class Predictor:
-    def __init__(self, mtcnn_model_path, mobilefacenet_model_path, face_db_path, threshold=0.7):
+    def __init__(self, mtcnn_model_path, mobilefacenet_model_path, face_db_path, threshold):
         self.threshold = threshold
         self.mtcnn = MTCNN(model_path=mtcnn_model_path)
 
@@ -68,12 +69,16 @@ class Predictor:
 
     def recognition(self, image_path):
         img = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), -1)
+        s = time.time()
         imgs, boxes = self.mtcnn.infer_image(img)
+        print('人脸检测时间：%dms' % int((time.time() - s) * 1000))
         imgs = self.process(imgs)
         if imgs is None:
             return None, None
         imgs = np.array(imgs, dtype='float32')
+        s = time.time()
         features = self.infer(imgs)
+        print('人脸识别时间：%dms' % int((time.time() - s) * 1000))
         names = []
         probs = []
         for i in range(len(features)):
@@ -84,7 +89,7 @@ class Predictor:
                 prob = np.dot(feature, feature1) / (np.linalg.norm(feature) * np.linalg.norm(feature1))
                 results_dict[name] = prob
             results = sorted(results_dict.items(), key=lambda d: d[1], reverse=True)
-            print(results)
+            print('人脸对比结果：', results)
             result = results[0]
             prob = float(result[1])
             probs.append(prob)
@@ -95,7 +100,8 @@ class Predictor:
                 names.append('unknow')
         return boxes, names
 
-    def add_text(self, img, text, left, top, color=(0, 0, 0), size=20):
+    @staticmethod
+    def add_text(img, text, left, top, color=(0, 0, 0), size=20):
         if isinstance(img, np.ndarray):
             img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(img)
@@ -121,8 +127,13 @@ class Predictor:
 
 
 if __name__ == '__main__':
-    predictor = Predictor(args.mtcnn_model_path, args.mobilefacenet_model_path, args.face_db_path)
+    predictor = Predictor(mtcnn_model_path=args.mtcnn_model_path,
+                          mobilefacenet_model_path=args.mobilefacenet_model_path,
+                          face_db_path=args.face_db_path,
+                          threshold=args.threshold)
+    start = time.time()
     boxes, names = predictor.recognition(args.image_path)
-    print(boxes)
-    print(names)
     predictor.draw_face(args.image_path, boxes, names)
+    print('预测的人脸位置：', boxes.astype(np.int_).tolist())
+    print('识别的人脸名称：', names)
+    print('总识别时间：%dms' % int((time.time() - start) * 1000))

@@ -6,8 +6,7 @@ from datetime import datetime
 import paddle
 from paddle.static import InputSpec
 
-from utils.reader import CustomDataset
-from utils.rec_mv1_enhance import MobileFaceNet
+from utils.mobilefacenet import MobileFaceNet
 from utils.resnet import resnet_face34
 from utils.utils import add_arguments, print_arguments
 
@@ -20,8 +19,6 @@ add_arg('resume',           str,    'models/mobilefacenet/params/epoch_50',  '�
 args = parser.parse_args()
 print_arguments(args)
 
-# 获取数据
-train_dataset = CustomDataset(args.train_root_path, is_train=True)
 
 # 获取模型，贴心的作者同时提供了resnet的模型，以满足不同情况的使用
 if args.use_model == 'resnet_face34':

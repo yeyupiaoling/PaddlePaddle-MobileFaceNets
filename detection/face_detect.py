@@ -240,7 +240,6 @@ class MTCNN:
         boxes_c, landmarks = self.detect_onet(im, boxes_c, 0.7)
         if boxes_c is None:
             return None, None
-        print(landmarks)
         imgs = []
         for landmark in landmarks:
             landmark = [[float(landmark[i]), float(landmark[i + 1])] for i in range(0, len(landmark), 2)]
