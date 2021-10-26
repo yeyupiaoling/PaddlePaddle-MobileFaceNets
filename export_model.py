@@ -13,7 +13,6 @@ from utils.utils import add_arguments, print_arguments
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('use_model',        str,    'mobilefacenet',          '所使用的模型，支持 mobilefacenet，resnet_face34')
-add_arg('train_root_path',  str,    'dataset/images',         '训练数据的根目录')
 add_arg('save_model',       str,    'models/',                '模型保存的路径')
 add_arg('resume',           str,    'models/mobilefacenet/params/epoch_50',  '恢复训练，当为None则不使用恢复模型')
 args = parser.parse_args()

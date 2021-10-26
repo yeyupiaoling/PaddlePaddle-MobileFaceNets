@@ -11,7 +11,7 @@ from paddle.io import DataLoader
 from paddle.metric import accuracy
 from visualdl import LogWriter
 
-from utils.metrics import ArcNet
+from utils.arcmargin import ArcNet
 from utils.mobilefacenet import MobileFaceNet
 from utils.reader import CustomDataset
 from utils.resnet import resnet_face34
@@ -98,11 +98,11 @@ def train(args):
     # 初始化epoch数
     last_epoch = 0
     # 学习率衰减
-    scheduler = paddle.optimizer.lr.StepDecay(learning_rate=args.learning_rate, step_size=1, gamma=0.7, verbose=True)
+    scheduler = paddle.optimizer.lr.CosineAnnealingDecay(learning_rate=args.learning_rate, T_max=args.num_epoch, verbose=True)
     # 设置优化方法
-    optimizer = paddle.optimizer.Adam(parameters=model.parameters() + metric_fc.parameters(),
-                                      learning_rate=scheduler,
-                                      weight_decay=paddle.regularizer.L2Decay(5e-4))
+    optimizer = paddle.optimizer.Momentum(parameters=model.parameters() + metric_fc.parameters(),
+                                          learning_rate=scheduler,
+                                          weight_decay=paddle.regularizer.L2Decay(1e-5))
 
     # 加载预训练模型
     if args.pretrained_model is not None:
