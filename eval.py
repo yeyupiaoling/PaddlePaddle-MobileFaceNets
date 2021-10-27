@@ -8,9 +8,9 @@ from utils.utils import get_features, get_feature_dict, test_performance
 
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
-add_arg('batch_size',               int,     64,                                 '训练的批量大小')
-add_arg('model_path',               str,     'models/mobilefacenet/infer/model', 'MobileFaceNet预测模型的路径')
-add_arg('test_list_path',           str,     'dataset/lfw_test.txt',             '测试数据的数据列表路径')
+add_arg('batch_size',               int,     64,                            '训练的批量大小')
+add_arg('model_path',               str,     'models/infer/model',          '预测模型的路径')
+add_arg('test_list_path',           str,     'dataset/lfw_test.txt',        '测试数据的数据列表路径')
 args = parser.parse_args()
 print_arguments(args)
 

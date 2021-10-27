@@ -13,11 +13,11 @@ from utils.utils import add_arguments, print_arguments
 
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
-add_arg('camera_id',                int,     0,                                  '使用的相机ID')
-add_arg('face_db_path',             str,     'face_db',                          '人脸库路径')
-add_arg('threshold',                float,   0.7,                                '判断相识度的阈值')
-add_arg('mobilefacenet_model_path', str,     'models/mobilefacenet/infer/model', 'MobileFaceNet预测模型的路径')
-add_arg('mtcnn_model_path',         str,     'models/mtcnn',                     'MTCNN预测模型的路径')
+add_arg('camera_id',                int,     0,                            '使用的相机ID')
+add_arg('face_db_path',             str,     'face_db',                    '人脸库路径')
+add_arg('threshold',                float,   0.7,                          '判断相识度的阈值')
+add_arg('mobilefacenet_model_path', str,     'models/infer/model',         'MobileFaceNet预测模型的路径')
+add_arg('mtcnn_model_path',         str,     'models/mtcnn',               'MTCNN预测模型的路径')
 args = parser.parse_args()
 print_arguments(args)
 

@@ -183,7 +183,7 @@ class MobileFaceNet(nn.Layer):
 
         self.pool = nn.MaxPool2D(kernel_size=2, stride=2, padding=0)
         self.flatten = Flatten()
-        self.linear = Linear(in_features=int(1024 * scale), out_features=1024)
+        self.linear = Linear(in_features=int(1024 * scale), out_features=int(1024 * scale))
         self.bn = BatchNorm1D(num_features=int(1024 * scale), data_format='NC')
 
     def forward(self, inputs):
