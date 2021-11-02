@@ -4,5 +4,6 @@ dataset/*
 temp/
 !dataset/lfw_test.zip
 !dataset/test.jpg
-models/mobilefacenet/params
-models/mobilefacenet/infer
+models/*
+!models/infer
+!models/mtcnn

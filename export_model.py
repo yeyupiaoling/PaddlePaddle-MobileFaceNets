@@ -12,13 +12,13 @@ from utils.utils import add_arguments, print_arguments
 parser = argparse.ArgumentParser(description=__doc__)
 add_arg = functools.partial(add_arguments, argparser=parser)
 add_arg('save_model',       str,    'models/',              '模型保存的路径')
-add_arg('resume',           str,    'models/epoch_50',      '恢复训练，当为None则不使用恢复模型')
+add_arg('resume',           str,    'models/epoch_50',      '模型所在的文件夹路径')
 args = parser.parse_args()
 print_arguments(args)
 
 
 # 获取模型
-model = MobileFaceNet(scale=1.0)
+model = MobileFaceNet(scale=0.5)
 
 paddle.summary(model, input_size=(None, 3, 112, 112))
 

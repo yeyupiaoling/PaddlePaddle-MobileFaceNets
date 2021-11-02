@@ -70,8 +70,8 @@ def train(args):
     print("[%s] 总数据类别为：%d" % (datetime.now(), train_dataset.num_classes))
 
     # 获取模型
-    model = MobileFaceNet(scale=1.0)
-    metric_fc = ArcNet(feature_dim=1024, class_dim=train_dataset.num_classes)
+    model = MobileFaceNet(scale=0.5)
+    metric_fc = ArcNet(feature_dim=512, class_dim=train_dataset.num_classes)
     paddle.summary(model, input_size=(None, 3, 112, 112))
 
     # 初始化epoch数
@@ -82,7 +82,7 @@ def train(args):
     optimizer = paddle.optimizer.Momentum(parameters=model.parameters() + metric_fc.parameters(),
                                           learning_rate=scheduler,
                                           momentum=0.9,
-                                          weight_decay=paddle.regularizer.L2Decay(1e-5))
+                                          weight_decay=1e-6)
 
     # 加载预训练模型
     if args.pretrained_model is not None:
