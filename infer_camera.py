@@ -135,8 +135,11 @@ if __name__ == '__main__':
         if ret:
             start = time.time()
             boxes, names = predictor.recognition(img)
-            if boxes is None:continue
-            predictor.draw_face(img, boxes, names)
-            print('预测的人脸位置：', boxes.astype('int32').tolist())
-            print('识别的人脸名称：', names)
-            print('总识别时间：%dms' % int((time.time() - start) * 1000))
+            if boxes is not None:
+                predictor.draw_face(img, boxes, names)
+                print('预测的人脸位置：', boxes.astype('int32').tolist())
+                print('识别的人脸名称：', names)
+                print('总识别时间：%dms' % int((time.time() - start) * 1000))
+            else:
+                cv2.imshow("result", img)
+                cv2.waitKey(1)
