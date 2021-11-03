@@ -71,9 +71,9 @@ class Predictor:
         s = time.time()
         imgs, boxes = self.mtcnn.infer_image(img)
         print('人脸检测时间：%dms' % int((time.time() - s) * 1000))
-        imgs = self.process(imgs)
         if imgs is None:
             return None, None
+        imgs = self.process(imgs)
         imgs = np.array(imgs, dtype='float32')
         s = time.time()
         features = self.infer(imgs)
@@ -135,7 +135,8 @@ if __name__ == '__main__':
         if ret:
             start = time.time()
             boxes, names = predictor.recognition(img)
+            if boxes is None:continue
             predictor.draw_face(img, boxes, names)
-            print('预测的人脸位置：', boxes.astype(np.int_).tolist())
+            print('预测的人脸位置：', boxes.astype('int32').tolist())
             print('识别的人脸名称：', names)
             print('总识别时间：%dms' % int((time.time() - start) * 1000))
