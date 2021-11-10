@@ -18,7 +18,7 @@ print_arguments(args)
 
 
 # 获取模型
-model = MobileFaceNet(scale=0.5)
+model = MobileFaceNet()
 
 paddle.summary(model, input_size=(None, 3, 112, 112))
 

@@ -1,196 +1,95 @@
 import paddle
-import paddle.nn as nn
-import paddle.nn.functional as F
-from paddle import ParamAttr
-from paddle.nn import AdaptiveAvgPool2D, Linear
-from paddle.nn import Conv2D, BatchNorm, Flatten, BatchNorm1D
-from paddle.nn.functional import hardsigmoid
-from paddle.nn.initializer import KaimingNormal
-from paddle.regularizer import L2Decay
+from paddle.nn import Linear, Conv2D, BatchNorm1D, BatchNorm2D, PReLU, Sequential, Flatten
 
 
-class ConvBNLayer(nn.Layer):
-    def __init__(self, num_channels, filter_size, num_filters, stride, padding, num_groups=1, act='hard_swish'):
-        super(ConvBNLayer, self).__init__()
-        self._conv = Conv2D(in_channels=num_channels,
-                            out_channels=num_filters,
-                            kernel_size=filter_size,
-                            stride=stride,
-                            padding=padding,
-                            groups=num_groups,
-                            weight_attr=ParamAttr(initializer=KaimingNormal()),
-                            bias_attr=False)
+class ConvBlock(paddle.nn.Layer):
+    def __init__(self, in_c, out_c, kernel=(1, 1), stride=(1, 1), padding=(0, 0), groups=1):
+        super(ConvBlock, self).__init__()
+        self.conv = Conv2D(in_c, out_channels=out_c, kernel_size=kernel, groups=groups, stride=stride, padding=padding)
+        self.bn = BatchNorm2D(out_c)
+        self.prelu = PReLU(out_c)
 
-        self._batch_norm = BatchNorm(num_filters,
-                                     act=act,
-                                     param_attr=ParamAttr(regularizer=L2Decay(0.0)),
-                                     bias_attr=ParamAttr(regularizer=L2Decay(0.0)))
-
-    def forward(self, inputs):
-        y = self._conv(inputs)
-        y = self._batch_norm(y)
-        return y
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.prelu(x)
+        return x
 
 
-class DepthwiseSeparable(nn.Layer):
-    def __init__(self, num_channels, num_filters1, num_filters2, num_groups, stride, scale, dw_size=3, padding=1,
-                 use_se=False):
-        super(DepthwiseSeparable, self).__init__()
-        self.use_se = use_se
-        self._depthwise_conv = ConvBNLayer(num_channels=num_channels,
-                                           num_filters=int(num_filters1 * scale),
-                                           filter_size=dw_size,
-                                           stride=stride,
-                                           padding=padding,
-                                           num_groups=int(num_groups * scale))
-        if use_se:
-            self._se = SEModule(int(num_filters1 * scale))
-        self._pointwise_conv = ConvBNLayer(num_channels=int(num_filters1 * scale),
-                                           filter_size=1,
-                                           num_filters=int(num_filters2 * scale),
-                                           stride=1,
-                                           padding=0)
+class LinearBlock(paddle.nn.Layer):
+    def __init__(self, in_c, out_c, kernel=(1, 1), stride=(1, 1), padding=(0, 0), groups=1):
+        super(LinearBlock, self).__init__()
+        self.conv = Conv2D(in_c, out_channels=out_c, kernel_size=kernel, groups=groups, stride=stride, padding=padding)
+        self.bn = BatchNorm2D(out_c)
 
-    def forward(self, inputs):
-        y = self._depthwise_conv(inputs)
-        if self.use_se:
-            y = self._se(y)
-        y = self._pointwise_conv(y)
-        return y
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        return x
 
 
-class SEModule(nn.Layer):
-    def __init__(self, channel, reduction=4):
-        super(SEModule, self).__init__()
-        self.avg_pool = AdaptiveAvgPool2D(1)
-        self.conv1 = Conv2D(in_channels=channel,
-                            out_channels=channel // reduction,
-                            kernel_size=1,
-                            stride=1,
-                            padding=0,
-                            weight_attr=ParamAttr(),
-                            bias_attr=ParamAttr())
-        self.conv2 = Conv2D(in_channels=channel // reduction,
-                            out_channels=channel,
-                            kernel_size=1,
-                            stride=1,
-                            padding=0,
-                            weight_attr=ParamAttr(),
-                            bias_attr=ParamAttr())
+class DepthWise(paddle.nn.Layer):
+    def __init__(self, in_c, out_c, residual=False, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=1):
+        super(DepthWise, self).__init__()
+        self.conv = ConvBlock(in_c, out_c=groups, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.conv_dw = ConvBlock(groups, groups, groups=groups, kernel=kernel, padding=padding, stride=stride)
+        self.project = LinearBlock(groups, out_c, kernel=(1, 1), padding=(0, 0), stride=(1, 1))
+        self.residual = residual
 
-    def forward(self, inputs):
-        outputs = self.avg_pool(inputs)
-        outputs = self.conv1(outputs)
-        outputs = F.relu(outputs)
-        outputs = self.conv2(outputs)
-        outputs = hardsigmoid(outputs)
-        return paddle.multiply(x=inputs, y=outputs)
+    def forward(self, x):
+        if self.residual:
+            short_cut = x
+        x = self.conv(x)
+        x = self.conv_dw(x)
+        x = self.project(x)
+        if self.residual:
+            output = short_cut + x
+        else:
+            output = x
+        return output
 
 
-class MobileFaceNet(nn.Layer):
-    def __init__(self, in_channels=3, scale=1.0):
-        super().__init__()
-        self.scale = scale
-        self.block_list = []
+class Residual(paddle.nn.Layer):
+    def __init__(self, c, num_block, groups, kernel=(3, 3), stride=(1, 1), padding=(1, 1)):
+        super(Residual, self).__init__()
+        modules = []
+        for _ in range(num_block):
+            modules.append(DepthWise(c, c, residual=True, kernel=kernel, padding=padding, stride=stride, groups=groups))
+        self.model = Sequential(*modules)
 
-        self.conv1 = ConvBNLayer(num_channels=in_channels,
-                                 filter_size=3,
-                                 num_filters=int(32 * scale),
-                                 stride=2,
-                                 padding=1)
+    def forward(self, x):
+        return self.model(x)
 
-        conv2_1 = DepthwiseSeparable(num_channels=int(32 * scale),
-                                     num_filters1=32,
-                                     num_filters2=64,
-                                     num_groups=32,
-                                     stride=1,
-                                     scale=scale)
-        self.block_list.append(conv2_1)
 
-        conv2_2 = DepthwiseSeparable(num_channels=int(64 * scale),
-                                     num_filters1=64,
-                                     num_filters2=128,
-                                     num_groups=64,
-                                     stride=1,
-                                     scale=scale)
-        self.block_list.append(conv2_2)
+class MobileFaceNet(paddle.nn.Layer):
+    def __init__(self):
+        super(MobileFaceNet, self).__init__()
+        self.conv1 = ConvBlock(3, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.conv2_dw = ConvBlock(64, 64, kernel=(3, 3), stride=(1, 1), padding=(1, 1), groups=64)
+        self.conv_23 = DepthWise(64, 64, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=128)
+        self.conv_3 = Residual(64, num_block=4, groups=128, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_34 = DepthWise(64, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=256)
+        self.conv_4 = Residual(128, num_block=6, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_45 = DepthWise(128, 128, kernel=(3, 3), stride=(2, 2), padding=(1, 1), groups=512)
+        self.conv_5 = Residual(128, num_block=2, groups=256, kernel=(3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv_6_sep = ConvBlock(128, 512, kernel=(1, 1), stride=(1, 1), padding=(0, 0))
+        self.conv_6_dw = LinearBlock(512, 512, groups=512, kernel=(7, 7), stride=(1, 1), padding=(0, 0))
+        self.conv_6_flatten = Flatten()
+        self.linear = Linear(in_features=512, out_features=512)
+        self.bn = BatchNorm1D(512)
 
-        conv3_1 = DepthwiseSeparable(num_channels=int(128 * scale),
-                                     num_filters1=128,
-                                     num_filters2=128,
-                                     num_groups=128,
-                                     stride=1,
-                                     scale=scale)
-        self.block_list.append(conv3_1)
-
-        conv3_2 = DepthwiseSeparable(num_channels=int(128 * scale),
-                                     num_filters1=128,
-                                     num_filters2=256,
-                                     num_groups=128,
-                                     stride=2,
-                                     scale=scale)
-        self.block_list.append(conv3_2)
-
-        conv4_1 = DepthwiseSeparable(num_channels=int(256 * scale),
-                                     num_filters1=256,
-                                     num_filters2=256,
-                                     num_groups=256,
-                                     stride=1,
-                                     scale=scale)
-        self.block_list.append(conv4_1)
-
-        conv4_2 = DepthwiseSeparable(num_channels=int(256 * scale),
-                                     num_filters1=256,
-                                     num_filters2=512,
-                                     num_groups=256,
-                                     stride=2,
-                                     scale=scale)
-        self.block_list.append(conv4_2)
-
-        for _ in range(5):
-            conv5 = DepthwiseSeparable(num_channels=int(512 * scale),
-                                       num_filters1=512,
-                                       num_filters2=512,
-                                       num_groups=512,
-                                       stride=1,
-                                       dw_size=5,
-                                       padding=2,
-                                       scale=scale,
-                                       use_se=False)
-            self.block_list.append(conv5)
-
-        conv5_6 = DepthwiseSeparable(num_channels=int(512 * scale),
-                                     num_filters1=512,
-                                     num_filters2=1024,
-                                     num_groups=512,
-                                     stride=2,
-                                     dw_size=5,
-                                     scale=scale,
-                                     use_se=True)
-        self.block_list.append(conv5_6)
-
-        conv6 = DepthwiseSeparable(num_channels=int(1024 * scale),
-                                   num_filters1=1024,
-                                   num_filters2=1024,
-                                   num_groups=1024,
-                                   stride=2,
-                                   dw_size=5,
-                                   use_se=True,
-                                   scale=scale)
-        self.block_list.append(conv6)
-
-        self.block_list = nn.Sequential(*self.block_list)
-
-        self.pool = nn.MaxPool2D(kernel_size=2, stride=2, padding=0)
-        self.flatten = Flatten()
-        self.linear = Linear(in_features=int(1024 * scale), out_features=int(1024 * scale))
-        self.bn = BatchNorm1D(num_features=int(1024 * scale), data_format='NC')
-
-    def forward(self, inputs):
-        y = self.conv1(inputs)
-        y = self.block_list(y)
-        y = self.pool(y)
-        y = self.flatten(y)
-        y = self.linear(y)
-        y = self.bn(y)
-        return y
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2_dw(x)
+        x = self.conv_23(x)
+        x = self.conv_3(x)
+        x = self.conv_34(x)
+        x = self.conv_4(x)
+        x = self.conv_45(x)
+        x = self.conv_5(x)
+        x = self.conv_6_sep(x)
+        x = self.conv_6_dw(x)
+        x = self.conv_6_flatten(x)
+        x = self.linear(x)
+        feature = self.bn(x)
+        return feature

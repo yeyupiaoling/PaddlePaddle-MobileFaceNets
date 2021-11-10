@@ -70,7 +70,7 @@ def train(args):
     print("[%s] 总数据类别为：%d" % (datetime.now(), train_dataset.num_classes))
 
     # 获取模型
-    model = MobileFaceNet(scale=0.5)
+    model = MobileFaceNet()
     metric_fc = ArcNet(feature_dim=512, class_dim=train_dataset.num_classes)
     paddle.summary(model, input_size=(None, 3, 112, 112))
 
@@ -162,3 +162,5 @@ def train(args):
 if __name__ == '__main__':
     print_arguments(args)
     train(args)
+# [2021-11-08 11:44:11.680056] Train epoch 13, batch: 0/1034, loss: 4.443083, accuracy: 0.328125, lr: 0.000055, eta: 2:07:31
+# [2021-11-08 11:44:26.636057] Train epoch 13, batch: 100/1034, loss: 4.564958, accuracy: 0.266399, lr: 0.000055, eta: 1:34:45
