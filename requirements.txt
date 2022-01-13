@@ -1,6 +1,6 @@
 opencv-python~=4.5.1.48
 numpy~=1.19.2
 tqdm~=4.59.0
-pillow~=8.1.2
+pillow~=9.0.0
 visualdl~=2.1.1
 scikit-image~=0.18.1
